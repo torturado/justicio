@@ -15,3 +15,11 @@
 
 [Doc1] (http://bop.dpz.es/BOPZ/obtenerContenidoEdicto.do?idEdicto=729066)
 [Doc2] (http://bop.dpz.es/BOPZ/obtenerContenidoEdicto.do?idEdicto=729162)
+
+## Live scraper status
+
+The scraper could not be validated for 2026-10-19. The search request to
+`http://bop.dpz.es/BOPZ/portalBuscarEdictos.do` timed out while opening a TCP connection. The official bulletin also
+lists `http://boletin.dpz.es/BOPZ/` as an alternate portal; that host timed out at the same stage from this
+environment. No HTTP response was received, so the cause cannot be attributed to a selector or metadata change.
+Retry the live check from an environment that can reach the BOPZ hosts.

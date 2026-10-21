@@ -1,11 +1,13 @@
+PYTHON := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+
 init:
-	pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements.txt
 
 isort:
-	isort --check-only src evaluation
+	$(PYTHON) -m isort --check-only src evaluation
 
 format: isort
-	black src evaluation
+	$(PYTHON) -m black src evaluation
 
 isort-fix:
-	isort src evaluation
+	$(PYTHON) -m isort src evaluation

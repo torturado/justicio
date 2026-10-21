@@ -1,22 +1,11 @@
 import logging as lg
 import time
-import typing as tp
 from functools import wraps
 
-from langchain.schema import Document
-from langchain.vectorstores import SupabaseVectorStore
-from pydantic import BaseModel
-from fastapi import Request
-from opentelemetry import baggage, context
 from langtrace_python_sdk.constants.instrumentation.common import (
     LANGTRACE_ADDITIONAL_SPAN_ATTRIBUTES_KEY,
 )
-
-
-class QAResponsePayloadModel(BaseModel):
-    scoring_id: str
-    context: tp.List[tp.Tuple[Document, float]]
-    answer: str
+from opentelemetry import baggage, context
 
 
 def timeit(func):
@@ -37,9 +26,7 @@ def timeit(func):
 
 async def inject_additional_attributes(fn, attributes=None):
     if attributes:
-        new_ctx = baggage.set_baggage(
-            LANGTRACE_ADDITIONAL_SPAN_ATTRIBUTES_KEY, attributes
-        )
+        new_ctx = baggage.set_baggage(LANGTRACE_ADDITIONAL_SPAN_ATTRIBUTES_KEY, attributes)
         context.attach(new_ctx)
 
     return await fn()

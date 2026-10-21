@@ -1,33 +1,13 @@
-import typing as tp
-from requests.exceptions import Timeout
 import random
-from bs4 import BeautifulSoup
+import re
+import typing as tp
 
-from langchain.docstore.document import Document
-from langchain.document_loaders.base import BaseLoader
+import requests
+from bs4 import BeautifulSoup
+from lxml import etree
+from requests.exceptions import Timeout
 
 from src.etls.utils import create_retry_session
-
-
-class TextLoader(BaseLoader):
-    """Load text files."""
-
-    def __init__(
-        self,
-        file_path: str,
-        encoding: tp.Optional[str] = None,
-        metadata: tp.Optional[dict] = None,
-    ):
-        """Initialize with file path."""
-        self.file_path = file_path
-        self.encoding = encoding
-        self.metadata = metadata
-
-    def load(self) -> tp.List[Document]:
-        """Load from file path."""
-        with open(self.file_path, encoding=self.encoding) as f:
-            text = f.read()
-        return [Document(page_content=text, metadata=self.metadata)]
 
 
 class ScrapperError(Exception):
@@ -57,20 +37,21 @@ class HTTPRequestException(Exception):
     """
     Exception for errors occurring during HTTP requests made by HTTPRequester.
     """
+
     def __init__(self, message="HTTP request error", *args):
         super().__init__(message, *args)
 
 
 class HTTPRequester:
     user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15"
-        ]
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+    ]
 
     default_headers = {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
@@ -95,7 +76,7 @@ class HTTPRequester:
         return headers
 
     @staticmethod
-    def get_soup(url, timeout=30, markup='html.parser'):
+    def get_soup(url, timeout=30, markup="html.parser"):
         """
         Performs an HTTP GET request to the provided URL, using random headers, and returns a BeautifulSoup
         object if the response is successful. If there is an error or timeout, it throws HTTPRequestException.
@@ -110,3 +91,47 @@ class HTTPRequester:
             raise HTTPRequestException(f"HTTP request timed out: {e}")
         except requests.RequestException as e:
             raise HTTPRequestException(f"HTTP request failed: {e}")
+
+
+def normalize_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def xml_element_text(element: tp.Optional[etree._Element]) -> str:
+    """Text of an XML element and its descendants, with whitespace collapsed."""
+    if element is None:
+        return ""
+    return normalize_whitespace(" ".join(element.itertext()))
+
+
+def xml_to_text(element: etree._Element) -> str:
+    """Plain text of a BOE XML text element (HTML-like markup).
+
+    One line per paragraph (also inside notes and quotes), tables flattened row by row with cells separated by " | ", images dropped.
+    """
+    lines: tp.List[str] = []
+    for child in element:
+        _append_text_lines(child, lines)
+    return "\n".join(lines)
+
+
+def _append_text_lines(element: etree._Element, lines: tp.List[str]) -> None:
+    # Comments and processing instructions have a non-string tag
+    if not isinstance(element.tag, str):
+        return
+    tag_name = etree.QName(element).localname.lower()
+    if tag_name == "img":
+        return
+    if tag_name == "table":
+        for row in element.iter("{*}tr"):
+            cells = [xml_element_text(cell) for cell in row if etree.QName(cell).localname.lower() in {"td", "th"}]
+            if any(cells):
+                lines.append(" | ".join(cells))
+        return
+    if tag_name in {"p", "li", "h1", "h2", "h3", "h4", "h5", "h6"} or not len(element):
+        text = xml_element_text(element)
+        if text:
+            lines.append(text)
+        return
+    for child in element:
+        _append_text_lines(child, lines)

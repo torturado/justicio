@@ -1,76 +1,40 @@
-// List all collections
+// List collections
 GET collections
 
-// Get collection info
+// Inspect the main collection
 GET collections/justicio
 
-// List points in a collection, using filter by metadata
+// Scroll consolidated legislation and return current metadata fields
 POST collections/justicio/points/scroll
 {
-  "limit": 40000,
+  "limit": 20,
+  "with_payload": [
+    "metadata.identificador",
+    "metadata.fecha_publicacion",
+    "metadata.source_type",
+    "metadata.rango"
+  ],
   "filter": {
     "must": [
       {
-        "key": "metadata.anio",
+        "key": "metadata.source_type",
         "match": {
-          "value": "2018"
+          "value": "Legislación consolidada"
         }
       }
     ]
   }
 }
 
-// Count points in a collection, using filter by metadata
+// Count points for a norm
 POST collections/justicio/points/count
 {
   "filter": {
     "must": [
       {
-        "key": "metadata.anio",
+        "key": "metadata.identificador",
         "match": {
-          "value": "2018"
-        }
-      }
-    ]
-  }
-}
-
-// Count points in a collection, using filter by multiple metadata
-POST collections/justicio/points/count
-{
-  "filter": {
-    "must": [
-      {
-        "key": "metadata.anio",
-        "match": {
-          "value": "2024"
-        }
-      },
-      {
-        "key": "metadata.mes",
-        "match": {
-          "value": "02"
-        }
-      },
-      {
-        "key": "metadata.dia",
-        "match": {
-          "value": "20"
-        }
-      }
-    ]
-  }
-}
-
-// Delete points in a collection, using filter by metadata
-POST collections/justicio/points/delete
-{
-  "filter": {
-    "must": [
-      {
-        "key": "metadata.anio",
-        "match": {
-          "value": "2018"
+          "value": "BOE-A-2015-10565"
         }
       }
     ]

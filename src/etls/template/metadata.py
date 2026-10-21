@@ -6,4 +6,7 @@ from src.etls.common.metadata import MetadataDocument
 
 
 class TemplateMetadataDocument(MetadataDocument):
-    pass
+    """Metadata shared by documents loaded through the bulletin template."""
+
+    source_name: str = "TEMPLATE"
+    source_type: str = "Boletin"

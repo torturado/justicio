@@ -2,7 +2,13 @@
 
 set -euo pipefail
 
-docker run -v $(pwd):/usr/app \
-           -e PINECONE_API_KEY \
-           -e PINECONE_ENV \
-           ia-boe:latest
+env_args=(-e APP_PATH=/usr/app)
+hf_cache_dir="${HF_HOME:-$HOME/.cache/huggingface}"
+mkdir -p "$hf_cache_dir"
+for name in GEMINI_API_KEY QDRANT_API_URL QDRANT_API_KEY TAVILY_API_KEY SENDGRID_API_KEY LANGTRACE_API_KEY; do
+    if [[ -v "$name" ]]; then
+        env_args+=(--env "$name")
+    fi
+done
+
+docker run --rm -p 5000:5000 -v "$(pwd):/usr/app" -v "$hf_cache_dir:/root/.cache/huggingface" "${env_args[@]}" justicio:latest

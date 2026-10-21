@@ -1,0 +1,44 @@
+[
+  {
+    "id": "interesados-procedimiento",
+    "query": "¿Qué derechos tienen las personas interesadas en un procedimiento administrativo común?",
+    "boe_id": "BOE-A-2015-10565",
+    "article": "53"
+  },
+  {
+    "id": "relaciones-administraciones",
+    "query": "¿Qué principios deben regir las relaciones y la colaboración entre las Administraciones Públicas?",
+    "boe_id": "BOE-A-2015-10566",
+    "article": "140"
+  },
+  {
+    "id": "gran-tenedor",
+    "query": "¿Qué se considera gran tenedor según la legislación estatal de vivienda?",
+    "boe_id": "BOE-A-2023-12203",
+    "article": "3"
+  },
+  {
+    "id": "referencia-explicita-vivienda",
+    "query": "¿Qué define el artículo 3 de la Ley 12/2023 como gran tenedor?",
+    "boe_id": "BOE-A-2023-12203",
+    "article": "3"
+  },
+  {
+    "id": "proceso-monitorio",
+    "query": "¿Qué tipo de deudas pueden reclamarse mediante el proceso monitorio y qué requisitos deben cumplir?",
+    "boe_id": "BOE-A-2000-323",
+    "article": "812"
+  },
+  {
+    "id": "derechos-inspeccion-tributaria",
+    "query": "¿Qué derechos del obligado tributario deben respetarse durante una inspección?",
+    "boe_id": "BOE-A-2003-23186",
+    "article": "34"
+  },
+  {
+    "id": "datos-personas-fallecidas",
+    "query": "¿Qué protección establece la ley para los datos personales de personas fallecidas y quién puede ejercerla?",
+    "boe_id": "BOE-A-2018-16673",
+    "article": "3"
+  }
+]

@@ -1,47 +1,52 @@
-# RecursiveCharacterTextSplitter
-chunk_size: 1200
-chunk_overlap: 100
+# RecursiveCharacterTextSplitter, used for documents without a legal structure (daily bulletins)
+chunk_size: 2000
+chunk_overlap: 200
 
 admin_email: bukosabino@gmail.com
 
-embeddings_model_name: dariolopez/roberta-base-bne-finetuned-msmarco-qa-es-mnrl-mn
-embeddings_model_size: 768
+# Local embeddings
+embeddings_model_name: BAAI/bge-m3
+embeddings_dimensions: 1024
 
-vector_store: 'qdrant'  # {'qdrant', 'pinecone', 'supabase'}
-top_k_results: 10
-distance_type: 'Cosine'  # {'Cosine', 'Euclid', 'Dot'}
+# Hybrid search: candidates retrieved by each search (dense and BM25) before the fusion
+prefetch_limit: 40
+reranker_candidates: 40
+top_k_results: 8
+reranker_model_name: BAAI/bge-reranker-v2-m3
+reranker_device: cpu
+reranker_max_length: 512
+reranker_batch_size: 8
 
 # Prompts
 prompt_system: |
-  Como un experto en derecho y leyes españolas, tu tarea es responder preguntas sobre el Boletín Oficial del Estado (BOE) de España. Para ello, debes tener en cuenta y utilizar el contexto proporcionado para responder de forma precisa a la pregunta del usuario.
-  Asegúrate de responder siempre en español. Si no conoces la respuesta o no tienes suficiente información para responderla, simplemente admítelo; no intentes inventar una respuesta.
-  Deberás proporcionar detalles claros y precisos en tus respuestas, asegurándote de referenciar adecuadamente cualquier ley o reglamento pertinente. Tu objetivo es proporcionar respuestas útiles y precisas para ayudar a los usuarios a entender mejor el BOE y cómo se aplica a sus preguntas.
+  Responde en español y utiliza únicamente los fragmentos oficiales que se proporcionan. Si no contienen información suficiente, indícalo claramente y no completes la respuesta con conocimiento externo ni inferencias jurídicas.
+  Distingue el texto de la norma de una valoración sobre su aplicación a un caso concreto. No afirmes que una disposición sigue vigente en una fecha determinada si los datos de la fuente no lo acreditan.
 
 prompt_system_context: |
-  El contexto tiene un formato de lista, donde cada elemento será un diccionario con dos claves:
-  [{'context': 'contexto necesario para contestar la pregunta', 'score': 0.8}]
-  La clave 'context' contendrá la información necesaria para contestar a la pregunta y la clave 'score' será una puntuación de entre 0.0 y 1.0. Deberás dar más importancia al contexto cuanto mayor sea el score.
-  En la respuesta no menciones nada sobre el contexto o los scores.
+  El contexto incluye la norma, el artículo o apartado y, cuando existe, su identificador BOE, fecha de versión y enlace.
+  Cita cada afirmación jurídica con los números de fragmento correspondientes, por ejemplo [2]. No inventes referencias ni uses un número de cita que no aparezca en el contexto.
+  Resume con tus propias palabras; no copies párrafos completos. Si se solicita una norma, artículo o ámbito territorial que no aparezca en las fuentes, dilo expresamente y no lo sustituyas por otra norma.
+  Si aparecen procedimientos con el mismo nombre en jurisdicciones distintas, sepáralos e identifica la norma y el ámbito de cada uno; no combines sus requisitos, límites ni documentos. Para una pregunta genérica sobre el proceso monitorio, responde primero sobre el proceso civil de la Ley de Enjuiciamiento Civil y solo añade el monitorio laboral como vía distinta si las fuentes lo respaldan.
 
 # Qdrant
 collections:
   - justicio
-  - boe
   - bocm
   - bopz
   - bopv
   - boja
   - boa
 
-# Openai
-llm_model_name: 'gpt-3.5-turbo-0125'  # 'gpt-3.5-turbo-1106', 'gpt-4-1106-preview'
-temperature: 0
-seed: 42
-max_tokens: 1024
+collection_scopes:
+  justicio: Legislación estatal consolidada del BOE
+  bocm: Boletín Oficial de la Comunidad de Madrid
+  bopz: Boletín Oficial de la Provincia de Zaragoza
+  bopv: Boletín Oficial del País Vasco
+  boja: Boletín Oficial de la Junta de Andalucía
+  boa: Boletín Oficial de Aragón
 
-# Not used
-## Pinecone
-vector_store_index_name: justicio
-## Supabase
-table_name: 'documents'
-query_name: 'match_documents'
+# Gemini LLM. Google recommends the default temperature (1.0) for Gemini 3 models.
+llm_model_name: gemini-3.5-flash-lite
+seed: 42
+# Includes the thinking tokens
+max_output_tokens: 4096

@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Optional
 
 from src.etls.common.metadata import MetadataDocument
@@ -16,7 +15,7 @@ class BOPVMetadataDocument(MetadataDocument):
 
     # Metadatos
     identificador: str
-    departamento: Optional[str] = None 
+    departamento: Optional[str] = None
     tipologia: str
 
     # Links
@@ -29,6 +28,3 @@ class BOPVMetadataDocument(MetadataDocument):
     anio: Optional[str] = None
     mes: Optional[str] = None
     dia: Optional[str] = None
-
-    datetime_insert: str = datetime.utcnow().isoformat()
-

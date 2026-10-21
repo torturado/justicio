@@ -1,52 +1,29 @@
-This is a template module to load gazettes (e.g.: BOE) and/or single documents (e.g.: sentencias judiciales) into the embedding database.
+# Adding a bulletin ETL
 
-# Gazettes
+A bulletin is a collection of documents published by date. Each scraper returns one metadata object per document,
+with the document text written to a temporary file for the shared ETL to chunk and index.
 
-A gazette in this project has some requirements:
+## Files to implement
 
-* A gazette is divided into days.
-* Each day has many documents.
+1. `defs.py`: set a unique `COLLECTION_NAME` and use it in `config/config.yaml` under `collections`.
+2. `metadata.py`: extend `MetadataDocument`. Inherit its required `filepath` and stable string `identificador`, and
+   declare `source_name` and `source_type`. Add bulletin-specific fields as needed. Keep every metadata value
+   JSON-serializable. `datetime_insert` is inherited and generated for each document; do not redeclare it.
+3. `scrapper.py`: implement `download_day(day: date)` and `download_document(url)`. Return metadata objects whose
+   `filepath` points to a UTF-8 text file. Use a stable identifier so already indexed documents can be skipped.
+   `BaseScrapper.download_days(date_start, date_end)` loops through the inclusive date range.
+4. `load.py`: construct `ETL(config_loader, vector_store)` and call `run(docs)`. It returns the number of newly
+   indexed documents. Report both downloaded and indexed counts; the vector store is selected by
+   `init_objects.vector_store[COLLECTION_NAME]` and is not configured through a `vector_store` YAML key.
+5. Register the collection in `config/config.yaml`. To run it daily, add the loader to `src/etls/jobs.py` and schedule
+   its `today` function.
 
-To define an ETL for your gazette, you need to fill some files:
-
-1. `metadata.py` Define the metadata to be stored in the embedding database.
-2. `scrapper.py` Define a class with some methods to scrape the information. 
-3. `load.py` You can define the different scripts to load the data.
-
-### Batch/Historical Load
-
-If you want to do a batch/historical load:
-
-```sh
-python -m src.etls.template.load dates <date_start_%Y/%m/%d> <date_end_%Y/%m/%d>
-```
-
-Note: You should update the end/start dates in the `config/config.py' file.
-
-### Daily (today) load
-
-Most likely, your Gazette will be updated every day, so you will need to run a daily ETL script. Take a look at src.etls.template.load.py for inspiration.
+## Run a load
 
 ```sh
 python -m src.etls.template.load today
+python -m src.etls.template.load dates 2026/10/16 2026/10/19
 ```
 
-You will probably also want to schedule a daily job to update your embedding database. Then take a look at `src/etls/template/schedule.py`.
-
-**Note:** For a complete example of a gazette configuration, you can take a look at the BOE `src/etls/boe`.
-
-# Documents
-
-If you want to load a single document into the embedding database.
-
-...In progress...
-
-
-# Want to develop your own module?
-
-You are welcome! Please contact us to discuss your requirements:
-
-* [Darío López](https://www.linkedin.com/in/dar%C3%ADo-l%C3%B3pez-padial-45269150/) 
-* [Alex Dantart](https://www.linkedin.com/in/dantart/)
-* [Jorge Iliarte](https://www.linkedin.com/in/jorge-iliarte-llop/)
-* [Jorge Barrachina](https://www.linkedin.com/in/jorgebarrachina/)
+The `dates` command includes both endpoints. Keep live scraper checks small and sequential, and remove temporary
+download files when validating a scraper without calling `ETL.run`.

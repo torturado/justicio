@@ -2,61 +2,46 @@ import logging as lg
 import os
 import typing as tp
 
-import pinecone
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from retry import retry
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.etls.common.metadata import MetadataDocument
-from src.etls.common.utils import TextLoader
 from src.initialize import initialize_logging
+from src.vector_store import Chunk, VectorStore
 
 initialize_logging()
 
 
 class ETL:
-    def __init__(self, config_loader, vector_store):
-        self._config_loader = config_loader
+    def __init__(self, config_loader, vector_store: VectorStore):
         self._vector_store = vector_store
+        self._text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=config_loader["chunk_size"],
+            chunk_overlap=config_loader["chunk_overlap"],
+        )
 
-    def run(self, docs: tp.List[MetadataDocument]):
-        chunks = self._split_documents(docs)
-        self._load_database(chunks)
-        # self._log_database_stats()
+    def run(self, docs: tp.List[MetadataDocument]) -> int:
+        """Index the documents that are not indexed yet and remove their downloaded text files.
 
-    def _split_documents(self, docs: tp.List[MetadataDocument]) -> tp.List[Document]:
-        """Split documents by chunks
-
-        :param docs:
-        :return:
+        :return: number of documents indexed
         """
-        logger = lg.getLogger(self._split_documents.__name__)
-        logger.info("Splitting in chunks %s documents", len(docs))
-        docs_chunks = []
+        logger = lg.getLogger(self.run.__name__)
+        logger.info("Indexing %s documents", len(docs))
+        indexed = 0
         for doc in docs:
-            loader = TextLoader(file_path=doc.filepath, metadata=doc.dict())
-            documents = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=self._config_loader["chunk_size"],
-                chunk_overlap=self._config_loader["chunk_overlap"],
-            )
-            docs_chunks += text_splitter.split_documents(documents)
-
-            logger.info("Removing file %s", doc.filepath)
+            if self._vector_store.has_document(doc.identificador):
+                logger.info("Skipping document %s: already indexed", doc.identificador)
+            else:
+                chunks = self._split_document(doc)
+                self._vector_store.replace_document(doc.identificador, chunks)
+                logger.info("Indexed document %s in %s chunks", doc.identificador, len(chunks))
+                indexed += 1
             os.remove(doc.filepath)
-        logger.info("Splitted %s documents in %s chunks", len(docs), len(docs_chunks))
-        return docs_chunks
+        logger.info("Indexed %s of %s documents", indexed, len(docs))
+        return indexed
 
-    @retry(tries=3, delay=2)
-    def _load_database(self, docs_chunks: tp.List[Document]) -> None:
-        logger = lg.getLogger(self._load_database.__name__)
-        logger.info("Loading %s embeddings to database", len(docs_chunks))
-        self._vector_store.add_documents(docs_chunks)
-        logger.info("Loaded %s embeddings to database", len(docs_chunks))
-
-    def _log_database_stats(self) -> None:
-        logger = lg.getLogger(self._log_database_stats.__name__)
-        index_name = self._config_loader["vector_store_index_name"]
-        logger.info(pinecone.describe_index(index_name))
-        index = pinecone.Index(index_name)
-        logger.info(index.describe_index_stats())
+    def _split_document(self, doc: MetadataDocument) -> tp.List[Chunk]:
+        with open(doc.filepath) as f:
+            text = f.read()
+        metadata = doc.model_dump(exclude={"filepath"})
+        title = doc.titulo or doc.identificador
+        return [Chunk(title=title, text=part, metadata=metadata) for part in self._text_splitter.split_text(text)]

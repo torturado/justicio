@@ -3,12 +3,11 @@ from datetime import date, datetime
 import typer
 
 from src.email.send_email import send_email
+from src.etls.boe.defs import COLLECTION_NAME
 from src.etls.boe.scrapper import BOEScrapper
 from src.etls.common.etl import ETL
 from src.etls.utils import catch_exceptions
-from src.etls.boe.defs import COLLECTION_NAME
 from src.initialize import initialize_app
-
 
 app = typer.Typer()
 
@@ -22,15 +21,14 @@ def today(init_objects=None):
     boe_scrapper = BOEScrapper()
     day = date.today()
     docs = boe_scrapper.download_day(day)
-    if docs:
-        etl_job.run(docs)
+    indexed_count = etl_job.run(docs) if docs else 0
 
     subject = "[BOE] Daily ETL executed"
     content = f"""
     Daily ETL executed
     - Date: {day}
-    - Documents loaded: {len(docs)} 
-    - Database used: {init_objects.config_loader['vector_store']}
+    - Documents downloaded: {len(docs)}
+    - Documents indexed: {indexed_count}
     """
     send_email(init_objects.config_loader, subject, content)
 
@@ -45,16 +43,15 @@ def dates(date_start: str, date_end: str, init_objects=None):
         date_start=datetime.strptime(date_start, "%Y/%m/%d").date(),
         date_end=datetime.strptime(date_end, "%Y/%m/%d").date(),
     )
-    if docs:
-        etl_job.run(docs)
+    indexed_count = etl_job.run(docs) if docs else 0
 
     subject = "[BOE] Load ETL executed"
     content = f"""
     Load ETL executed
     - Date start: {date_start}
     - Date end: {date_end}
-    - Documents loaded: {len(docs)} 
-    - Database used: {init_objects.config_loader['vector_store']}
+    - Documents downloaded: {len(docs)}
+    - Documents indexed: {indexed_count}
     """
     send_email(init_objects.config_loader, subject, content)
 

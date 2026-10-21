@@ -1,13 +1,10 @@
-from datetime import datetime
 from typing import Optional
 
 from src.etls.common.metadata import MetadataDocument
 
 
-
-
 class BOJAMetadataDocument(MetadataDocument):
-    """Class for keeping metadata of a BOJA Document scrapped."""    
+    """Class for keeping metadata of a BOJA Document scrapped."""
 
     # Text
     filepath: str
@@ -19,7 +16,7 @@ class BOJAMetadataDocument(MetadataDocument):
     # Metadatos
     identificador: str
     departamento: str
-    tipologia: str   
+    tipologia: str
 
     # Links
     titulo: Optional[str] = None
@@ -31,6 +28,3 @@ class BOJAMetadataDocument(MetadataDocument):
     anio: Optional[str] = None
     mes: Optional[str] = None
     dia: Optional[str] = None
-
-    datetime_insert: str = datetime.utcnow().isoformat()
-

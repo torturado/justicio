@@ -1,11 +1,10 @@
+import re
 import typing as tp
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator, Field
-import re
+from pydantic import Field, field_validator
 
 from src.etls.common.metadata import MetadataDocument
-
 
 # REGEX
 CVE_REGEX = r"^BOCM-\d{8}-\d{1,3}$"  # TODO: regex demasiado laxa
@@ -44,8 +43,6 @@ class BOCMMetadataDocument(MetadataDocument):
     anio: str
     mes: str
     dia: str
-
-    datetime_insert: str = datetime.utcnow().isoformat()
 
     @field_validator("fecha_publicacion", "fecha_disposicion")
     @classmethod

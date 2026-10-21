@@ -3,19 +3,13 @@ import logging as lg
 import os
 
 import yaml
-from langchain.chains import RetrievalQA
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.prompts import (
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    SystemMessagePromptTemplate,
-)
-from langchain.vectorstores.qdrant import Qdrant
-from openai import AsyncOpenAI
+from google import genai
+from google.genai import types
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams
 from tavily import TavilyClient
+
+from src.embeddings import SentenceTransformerEmbedder
+from src.vector_store import VectorStore
 
 
 def initialize_logging():
@@ -35,105 +29,62 @@ def initialize_app():
     """Initializes the application"""
     logger = lg.getLogger(initialize_app.__name__)
     logger.info("Initializing application")
-    config_loader = _init_config()
-    vector_store = _init_vector_store(config_loader)
-    openai_client = _init_openai_client()
-    tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
-    # retrieval_qa = _init_retrieval_qa_llm(vector_store, config_loader)
+    config_loader = load_config()
+    genai_client = init_genai_client()
+    embedder = SentenceTransformerEmbedder(config_loader["embeddings_model_name"])
+    if embedder.dimensions != config_loader["embeddings_dimensions"]:
+        raise RuntimeError(
+            f"Embedding model [{config_loader['embeddings_model_name']}] returns {embedder.dimensions} dimensions, "
+            f"but config expects {config_loader['embeddings_dimensions']}."
+        )
+    vector_store = _init_vector_stores(config_loader, embedder)
+    tavily_api_key = os.environ.get("TAVILY_API_KEY")
+    tavily_client = TavilyClient(api_key=tavily_api_key) if tavily_api_key else None
     logger.info("Initialized application")
     init_objects = collections.namedtuple(
-        "init_objects", ["config_loader", "vector_store", "openai_client", "tavily_client"]
+        "init_objects", ["config_loader", "vector_store", "embedder", "genai_client", "tavily_client"]
     )
-    return init_objects(config_loader, vector_store, openai_client, tavily_client)
+    return init_objects(config_loader, vector_store, embedder, genai_client, tavily_client)
 
 
-def _init_config():
+def load_config():
     yaml_config_path = os.path.join(os.environ["APP_PATH"], "config", "config.yaml")
     with open(yaml_config_path, "r") as stream:
         config_loader = yaml.safe_load(stream)
     return config_loader
 
 
-def _init_vector_store(config_loader):
-    logger = lg.getLogger(_init_vector_store.__name__)
-    logger.info("Initializing vector store")
-    if config_loader["vector_store"] == "qdrant":
-        vector_store = _init_vector_stores_qdrant(config_loader)
-    else:
-        raise ValueError("Vector Database not configured")
-    return vector_store
-
-
-def _init_vector_stores_qdrant(config_loader):
-    logger = lg.getLogger(_init_vector_stores_qdrant.__name__)
-    logger.info("Initializing vector stores")
-    qdrant_client = QdrantClient(
-        url=os.environ["QDRANT_API_URL"],
-        api_key=os.environ["QDRANT_API_KEY"],
-        prefer_grpc=True,
+def init_genai_client():
+    logger = lg.getLogger(init_genai_client.__name__)
+    logger.info("Initializing Gemini client")
+    client = genai.Client(
+        api_key=os.environ["GEMINI_API_KEY"],
+        # Retries rate limits (429) and server errors with exponential backoff
+        http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=8, initial_delay=2, max_delay=60)),
     )
-    embeddings = HuggingFaceEmbeddings(
-        model_name=config_loader["embeddings_model_name"],
-        model_kwargs={"device": "cpu"},
-    )
-    vector_stores = {}
-    for collection_name in config_loader["collections"]:
-        if not _exists_collection(qdrant_client, collection_name):
-            logger.info("Creating collection for vector store")
-            qdrant_client.recreate_collection(
-                collection_name=collection_name,
-                vectors_config=VectorParams(
-                    size=config_loader["embeddings_model_size"], distance=config_loader["distance_type"]
-                ),
-                on_disk_payload=True,
-            )
-            logger.info("Created collection [%s] for vector store", collection_name)
-        vector_stores[collection_name] = Qdrant(qdrant_client, collection_name, embeddings)
-        logger.info("Initialized vector store for collection [%s]", collection_name)
-    return vector_stores
-
-
-def _init_openai_client():
-    logger = lg.getLogger(_init_openai_client.__name__)
-    logger.info("Initializing OpenAI client")
-    client = AsyncOpenAI(
-        api_key=os.environ.get("OPENAI_API_KEY"),
-    )
-    logger.info("Initialized OpenAI client")
+    logger.info("Initialized Gemini client")
     return client
 
 
-def _exists_collection(qdrant_client, collection_name):
-    logger = lg.getLogger(_exists_collection.__name__)
-    try:
-        qdrant_client.get_collection(collection_name=collection_name)
-        return True
-    except:
-        logger.warn("Collection [%s] doesn't exist", collection_name)
-        return False
-
-
-def _init_retrieval_qa_llm(vector_store, config_loader):
-    # DEPRECATED
-    logger = lg.getLogger(_init_retrieval_qa_llm.__name__)
-    logger.info("Initializing RetrievalQA LLM")
-    retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": config_loader["top_k_results"]})
-    system_template = f"{config_loader['prompt_system']}----------------\n{{context}}"
-    messages = [
-        SystemMessagePromptTemplate.from_template(system_template),
-        HumanMessagePromptTemplate.from_template("{question}"),
-    ]
-    retrieval_qa = RetrievalQA.from_chain_type(
-        llm=ChatOpenAI(
-            model_name=config_loader["llm_model_name"],
-            temperature=config_loader["temperature"],
-            max_tokens=config_loader["max_tokens"],
-        ),
-        chain_type="stuff",
-        return_source_documents=True,
-        retriever=retriever,
-        chain_type_kwargs={"prompt": ChatPromptTemplate.from_messages(messages)},
+def init_qdrant_client():
+    return QdrantClient(
+        url=os.environ["QDRANT_API_URL"],
+        api_key=os.environ.get("QDRANT_API_KEY"),
+        prefer_grpc=True,
+        # BM25 sparse vectors are computed by the Qdrant server
+        cloud_inference=True,
+        timeout=60,
     )
-    logger.info(retrieval_qa.combine_documents_chain.llm_chain.prompt.format)
-    logger.info("Initialized RetrievalQA LLM")
-    return retrieval_qa
+
+
+def _init_vector_stores(config_loader, embedder):
+    logger = lg.getLogger(_init_vector_stores.__name__)
+    logger.info("Initializing vector stores")
+    qdrant_client = init_qdrant_client()
+    vector_stores = {}
+    for collection_name in config_loader["collections"]:
+        vector_store = VectorStore(qdrant_client, collection_name, embedder, config_loader["embeddings_dimensions"])
+        vector_store.ensure_collection()
+        vector_stores[collection_name] = vector_store
+        logger.info("Initialized vector store for collection [%s]", collection_name)
+    return vector_stores

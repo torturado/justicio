@@ -15,9 +15,6 @@ class BOEMetadataReferencia(BaseModel):
 class BOEMetadataDocument(MetadataDocument):
     """Class for keeping metadata of a BOE Document scrapped."""
 
-    # Text
-    filepath: str
-
     # Source
     source_name: str = "BOE"
     source_type: str = "Boletin"
@@ -45,20 +42,24 @@ class BOEMetadataDocument(MetadataDocument):
     materias: tp.List[str]
     alertas: tp.List[str]
     notas: tp.List[str]
-    ref_posteriores: tp.List[BOEMetadataReferencia]
-    ref_anteriores: tp.List[BOEMetadataReferencia]
+    ref_posteriores: tp.List[str]
+    ref_anteriores: tp.List[str]
 
-    datetime_insert: str = datetime.utcnow().isoformat()
-
-    @field_validator("ref_posteriores")
+    @field_validator("ref_posteriores", mode="before")
     @classmethod
-    def ref_posteriores_to_json(cls, validators):
-        return [v.json() for v in validators]
+    def ref_posteriores_to_json(cls, references):
+        return [
+            reference.model_dump_json() if isinstance(reference, BOEMetadataReferencia) else reference
+            for reference in references
+        ]
 
-    @field_validator("ref_anteriores")
+    @field_validator("ref_anteriores", mode="before")
     @classmethod
-    def ref_anteriores_to_json(cls, validators):
-        return [v.json() for v in validators]
+    def ref_anteriores_to_json(cls, references):
+        return [
+            reference.model_dump_json() if isinstance(reference, BOEMetadataReferencia) else reference
+            for reference in references
+        ]
 
     @field_validator("fecha_publicacion", "fecha_disposicion")
     @classmethod

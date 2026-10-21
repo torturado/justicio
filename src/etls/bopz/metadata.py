@@ -32,8 +32,6 @@ class BOPZMetadataDocument(MetadataDocument):
     # Analisis
     materia: tp.List[str]
 
-    datetime_insert: str = datetime.utcnow().isoformat()
-
     @field_validator("fecha_publicacion", "fecha_disposicion")
     @classmethod
     def isoformat(cls, v):
