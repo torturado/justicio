@@ -1,52 +1,24 @@
-import re
-import typing as tp
-from datetime import datetime
-
-from pydantic import Field, field_validator
+from pydantic import Field
 
 from src.etls.common.metadata import MetadataDocument
 
-# REGEX
-CVE_REGEX = r"^BOCM-\d{8}-\d{1,3}$"  # TODO: regex demasiado laxa
+# Código de Verificación Electrónica (CVE) of a document
+CVE_REGEX = r"^BOCM-\d{8}-\d{1,3}$"
 
 
 class BOCMMetadataDocument(MetadataDocument):
-    """Class for keeping metadata of a BOCM Document scrapped."""
+    """Metadata of a BOCM document. ``identificador`` is its CVE."""
 
-    # Text
-    filepath: str
-
-    # Source
     source_name: str = "BOCM"
-    source_type: str = "Boletin"
 
-    # Metadatos
     identificador: str = Field(pattern=CVE_REGEX, examples=["BOCM-20240129-24"])
-    numero_oficial: str = ""  # Número de boletín
-    paginas: str
-    departamento: str  # órgano (excepto sección 4, que no tiene)
-
+    # Number of the bulletin that published the document
+    numero_boletin: str
+    paginas: str | None = None
+    # Code of the section, e.g. "1.3.103.1", and its first level, e.g. "1"
     seccion_normalizada: str
     seccion: str
-    subseccion: str
-    tipo: str = ""
-    apartado: str = ""
-    rango: str = ""
-
-    # Links
-    titulo: str  # title
-    url_pdf: str  # pdf_link
-    url_html: str  # html_link
-
-    fecha_publicacion: str
-    fecha_disposicion: str = ""
-    anio: str
-    mes: str
-    dia: str
-
-    @field_validator("fecha_publicacion", "fecha_disposicion")
-    @classmethod
-    def isoformat(cls, v):
-        if v:
-            return datetime.strptime(v, "%Y-%m-%d").strftime("%Y-%m-%d")
-        return v
+    # Subsection of section I, e.g. "A) Disposiciones Generales"
+    subseccion: str | None = None
+    # Subject of a section III (local administration) document, e.g. "URBANISMO"
+    apartado: str | None = None

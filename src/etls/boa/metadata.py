@@ -1,34 +1,13 @@
-from typing import Optional
-
 from src.etls.common.metadata import MetadataDocument
 
 
 class BOAMetadataDocument(MetadataDocument):
-    """Class for keeping metadata of a BOA Document scrapped."""
+    """Metadata of a BOA document. ``identificador`` is the DOCN of the BOA search engine, e.g. "007938891"."""
 
-    # Text
-    filepath: str
-
-    # Source
     source_name: str = "BOA"
-    source_type: str = "Boletin"
 
-    # Metadatos
+    # Number of the bulletin that published the document
     numero_boletin: str
-    identificador: str  # DOCN
-    departamento: Optional[str] = None
-    seccion: Optional[str] = None
-    subseccion: Optional[str] = None
-    rango: Optional[str] = None
-    codigo_materia: Optional[str] = None
-
-    # Links
-    titulo: Optional[str] = None
-    url_pdf: str
-    url_boletin: Optional[str] = None
-
-    fecha_disposicion: str = ""
-    fecha_publicacion: str = ""
-    anio: Optional[str] = None
-    mes: Optional[str] = None
-    dia: Optional[str] = None
+    seccion: str | None = None
+    subseccion: str | None = None
+    codigo_materia: str | None = None

@@ -1,18 +1,24 @@
 FROM python:3.12-slim
 
+COPY --from=ghcr.io/astral-sh/uv:0.11.7 /uv /bin/uv
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
+
 WORKDIR /usr/app
 
-COPY requirements.txt .
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev --extra cpu --no-install-project
 
-RUN pip install --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cpu \
-        --extra-index-url https://pypi.org/simple \
-        torch \
-    && pip install --no-cache-dir -r requirements.txt
+COPY config config
+COPY src src
 
-COPY . .
+# The UID matches the usual host user, so the mounted Hugging Face cache stays writable
+RUN useradd --create-home --uid 1000 justicio
+USER justicio
 
-ENV APP_PATH=/usr/app \
+ENV PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/usr/app
 
 EXPOSE 5000

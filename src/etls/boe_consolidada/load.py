@@ -1,200 +1,127 @@
-import logging as lg
-import typing as tp
-from datetime import date, datetime, timedelta
+"""Loads of BOE consolidated legislation into the vector index."""
 
-import typer
+import logging as lg
+from collections.abc import Callable, Iterable, Set
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+from typing import Any
+
+from langchain_text_splitters import TextSplitter
+from lxml import etree
 from qdrant_client import models
 
-from src.email.send_email import send_email
-from src.etls.boe_consolidada.defs import COLLECTION_NAME
 from src.etls.boe_consolidada.parser import (
+    SOURCE_NAME,
+    SOURCE_TYPE,
     build_chunks,
     catalogue_item_from_document,
     document_is_in_force,
 )
 from src.etls.boe_consolidada.scrapper import BOEConsolidadaScrapper
-from src.etls.utils import catch_exceptions
-from src.initialize import initialize_app
-from src.vector_store import VectorStore
-
-app = typer.Typer()
+from src.vector_store import VectorIndex, match
 
 
-def _process_item(
-    item: tp.Dict[str, tp.Any],
-    scrapper: BOEConsolidadaScrapper,
-    vector_store: VectorStore,
-    today: date,
-) -> str:
-    logger = lg.getLogger(_process_item.__name__)
-    identificador = item.get("identificador", "")
-    if item.get("vigencia_agotada") == "S":
-        vector_store.delete_document(identificador)
-        logger.info("Deleted expired norm [%s]", identificador)
-        return "deleted"
-
-    document_root = scrapper.download_document(identificador)
-    return _process_document(item, document_root, vector_store, today)
+@dataclass
+class ConsolidatedStats:
+    loaded: int = 0
+    deleted: int = 0
+    skipped: int = 0
+    failed: list[str] = field(default_factory=list)
 
 
-def _process_document(item: tp.Dict[str, tp.Any], document_root, vector_store: VectorStore, today: date) -> str:
-    logger = lg.getLogger(_process_document.__name__)
-    identificador = item.get("identificador", "")
-    if not document_is_in_force(document_root):
-        vector_store.delete_document(identificador)
-        logger.info("Deleted norm no longer in force [%s]", identificador)
-        return "deleted"
+@dataclass
+class ConsolidatedLoader:
+    index: VectorIndex
+    text_splitter: TextSplitter
+    today: date
+    scrapper: BOEConsolidadaScrapper = field(default_factory=BOEConsolidadaScrapper)
 
-    chunks = build_chunks(item, document_root, today)
-    vector_store.replace_document(identificador, chunks)
-    logger.info("Indexed consolidated norm [%s] with %s chunks", identificador, len(chunks))
-    return "loaded"
+    def load_all(self) -> ConsolidatedStats:
+        """Initial load of the catalogue, skipping the norms already indexed."""
+        indexed = self.index.identificadores(_consolidated_filter())
+        return self._process_catalogue(self.scrapper.iter_catalogue(), skip_identifiers=indexed)
 
+    def load_since(self, date_start: date) -> ConsolidatedStats:
+        return self._process_catalogue(self.scrapper.iter_catalogue(date_from=date_start))
 
-def _process_catalogue(
-    items: tp.Iterable[tp.Dict[str, tp.Any]],
-    scrapper: BOEConsolidadaScrapper,
-    vector_store: VectorStore,
-    today: date,
-    skip_identifiers: tp.AbstractSet[str] = frozenset(),
-) -> tp.Dict[str, int]:
-    logger = lg.getLogger(_process_catalogue.__name__)
-    stats = {"loaded": 0, "deleted": 0, "skipped": 0, "failed": 0}
-    seen: tp.Set[str] = set()
-    for item in items:
-        identificador = item.get("identificador", "")
-        if not identificador or identificador in seen:
-            continue
-        seen.add(identificador)
-        try:
-            if item.get("vigencia_agotada") != "S" and identificador in skip_identifiers:
-                stats["skipped"] += 1
-                continue
-            result = _process_item(item, scrapper, vector_store, today)
-            stats[result] += 1
-        except Exception:
-            stats["failed"] += 1
-            logger.exception("Failed to process consolidated norm [%s]; continuing", identificador)
-    return stats
+    def update(self) -> ConsolidatedStats:
+        """Reload the norms updated since the latest indexed update, and those with a due fecha_revision.
 
-
-def _process_identifier(
-    identificador: str,
-    scrapper: BOEConsolidadaScrapper,
-    vector_store: VectorStore,
-    today: date,
-) -> str:
-    document_root = scrapper.download_document(identificador)
-    item = catalogue_item_from_document(document_root)
-    if not item.get("identificador"):
-        item["identificador"] = identificador
-    return _process_document(item, document_root, vector_store, today)
-
-
-def _run_all(init_objects, today: tp.Optional[date] = None) -> tp.Dict[str, int]:
-    day = today or date.today()
-    scrapper = BOEConsolidadaScrapper()
-    vector_store = init_objects.vector_store[COLLECTION_NAME]
-    existing_consolidated = vector_store.identificadores(
-        models.Filter(
-            must=[
-                models.FieldCondition(
-                    key="metadata.source_type",
-                    match=models.MatchValue(value="Legislación consolidada"),
-                )
-            ]
-        )
-    )
-    return _process_catalogue(
-        scrapper.iter_catalogue(),
-        scrapper,
-        vector_store,
-        day,
-        skip_identifiers=existing_consolidated,
-    )
-
-
-def _run_since(init_objects, date_start: date, today: tp.Optional[date] = None) -> tp.Dict[str, int]:
-    day = today or date.today()
-    scrapper = BOEConsolidadaScrapper()
-    return _process_catalogue(
-        scrapper.iter_catalogue(date_from=date_start),
-        scrapper,
-        init_objects.vector_store[COLLECTION_NAME],
-        day,
-    )
-
-
-def _run_today(init_objects, today: tp.Optional[date] = None) -> tp.Dict[str, int]:
-    day = today or date.today()
-    vector_store = init_objects.vector_store[COLLECTION_NAME]
-    scrapper = BOEConsolidadaScrapper()
-    updated_items = list(scrapper.iter_catalogue(date_from=day - timedelta(days=1)))
-    updated_ids = {item.get("identificador") for item in updated_items}
-    revision_filter = models.Filter(
-        must=[
+        Starting from the latest indexed fecha_actualizacion catches up after missed runs.
+        """
+        latest_update = self.index.latest_date("fecha_actualizacion", _consolidated_filter())
+        date_from = latest_update or self.today - timedelta(days=1)
+        lg.getLogger(self.update.__name__).info("Loading consolidated norms updated since %s", date_from)
+        updated_items = list(self.scrapper.iter_catalogue(date_from=date_from))
+        revision_filter = _consolidated_filter(
             models.FieldCondition(
-                key="metadata.fecha_revision",
-                range=models.DatetimeRange(lte=f"{day.isoformat()}T23:59:59Z"),
+                key="fecha_revision", range=models.DatetimeRange(lte=f"{self.today.isoformat()}T23:59:59Z")
             )
-        ]
-    )
-    revision_ids = vector_store.identificadores(revision_filter)
-    stats = _process_catalogue(updated_items, scrapper, vector_store, day)
+        )
+        revision_ids = self.index.identificadores(revision_filter)
+        stats = self._process_catalogue(updated_items)
+        updated_ids = {item.get("identificador") for item in updated_items}
+        for identificador in sorted(revision_ids - updated_ids):
+            self._record(stats, identificador, self.load_document, identificador)
+        return stats
 
-    for identificador in sorted(revision_ids - updated_ids):
+    def load_document(self, identificador: str) -> str:
+        document_root = self.scrapper.download_document(identificador)
+        item = catalogue_item_from_document(document_root)
+        if not item.get("identificador"):
+            item["identificador"] = identificador
+        return self._load(item, document_root)
+
+    def _process_catalogue(
+        self, items: Iterable[dict[str, Any]], skip_identifiers: Set[str] = frozenset()
+    ) -> ConsolidatedStats:
+        stats = ConsolidatedStats()
+        seen: set[str] = set()
+        for item in items:
+            identificador = item.get("identificador", "")
+            if not identificador or identificador in seen:
+                continue
+            seen.add(identificador)
+            if item.get("vigencia_agotada") != "S" and identificador in skip_identifiers:
+                stats.skipped += 1
+                continue
+            self._record(stats, identificador, self._load_item, item)
+        return stats
+
+    def _record(self, stats: ConsolidatedStats, identificador: str, load: Callable[[Any], str], argument: Any) -> None:
+        """Run a load and count its result; a failing norm is logged and recorded, not fatal."""
         try:
-            result = _process_identifier(identificador, scrapper, vector_store, day)
-            stats[result] += 1
+            result = load(argument)
         except Exception:
-            stats["failed"] += 1
-            lg.getLogger(_run_today.__name__).exception(
-                "Failed to reload consolidated norm [%s] due to fecha_revision; continuing", identificador
-            )
-    return stats
+            lg.getLogger(self._record.__name__).exception("Failed to load consolidated norm [%s]", identificador)
+            stats.failed.append(identificador)
+            return
+        if result == "deleted":
+            stats.deleted += 1
+        else:
+            stats.loaded += 1
+
+    def _load_item(self, item: dict[str, Any]) -> str:
+        identificador = item["identificador"]
+        if item.get("vigencia_agotada") == "S":
+            self.index.delete_document(SOURCE_NAME, identificador)
+            lg.getLogger(self._load_item.__name__).info("Deleted expired norm [%s]", identificador)
+            return "deleted"
+        return self._load(item, self.scrapper.download_document(identificador))
+
+    def _load(self, item: dict[str, Any], document_root: etree._Element) -> str:
+        logger = lg.getLogger(self._load.__name__)
+        identificador = item["identificador"]
+        # The consolidated text replaces the originally published text, which shares its identifier
+        if not document_is_in_force(document_root):
+            self.index.delete_document(SOURCE_NAME, identificador)
+            logger.info("Deleted norm no longer in force [%s]", identificador)
+            return "deleted"
+        chunks = build_chunks(item, document_root, self.today, self.text_splitter)
+        self.index.replace_document(SOURCE_NAME, identificador, chunks)
+        logger.info("Indexed consolidated norm [%s] with %s chunks", identificador, len(chunks))
+        return "loaded"
 
 
-@app.command(name="all")
-def all_documents():
-    init_objects = initialize_app()
-    stats = _run_all(init_objects)
-    lg.getLogger(all_documents.__name__).info("Consolidated catalogue load completed: %s", stats)
-
-
-@app.command()
-def since(date_start: str):
-    init_objects = initialize_app()
-    start = datetime.strptime(date_start, "%Y/%m/%d").date()
-    stats = _run_since(init_objects, start)
-    lg.getLogger(since.__name__).info("Consolidated since load completed: %s", stats)
-
-
-@app.command()
-def document(identificador: str):
-    init_objects = initialize_app()
-    scrapper = BOEConsolidadaScrapper()
-    result = _process_identifier(identificador, scrapper, init_objects.vector_store[COLLECTION_NAME], date.today())
-    lg.getLogger(document.__name__).info("Consolidated norm [%s]: %s", identificador, result)
-
-
-@app.command()
-@catch_exceptions(cancel_on_failure=True)
-def today(init_objects=None):
-    if init_objects is None:
-        init_objects = initialize_app()
-    day = date.today()
-    stats = _run_today(init_objects, day)
-    subject = "[BOE consolidada] Daily ETL executed"
-    content = f"""
-    Daily consolidated legislation ETL executed
-    - Date: {day}
-    - Norms loaded: {stats['loaded']}
-    - Norms deleted: {stats['deleted']}
-    - Norms skipped: {stats['skipped']}
-    - Norms failed: {stats['failed']}
-    """
-    send_email(init_objects.config_loader, subject, content)
-
-
-if __name__ == "__main__":
-    app()
+def _consolidated_filter(*conditions: models.Condition) -> models.Filter:
+    return models.Filter(must=[match("source_name", SOURCE_NAME), match("source_type", SOURCE_TYPE), *conditions])

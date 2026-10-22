@@ -2,20 +2,22 @@ import json
 import logging as lg
 import os
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
 import requests
 import typer
 from qdrant_client import QdrantClient, models
 
+from evaluation.embeddings.gemini import GeminiEmbedder
 from evaluation.embeddings.questions import QUERIES
 from src import vector_store as vector_store_module
-from src.embeddings import GeminiEmbedder, SentenceTransformerEmbedder
-from src.initialize import init_genai_client, init_qdrant_client, load_config
-from src.vector_store import Chunk, VectorStore
+from src.embeddings import SentenceTransformerEmbedder
+from src.initialize import create_embedder, create_genai_client, create_qdrant_client
+from src.settings import Settings, load_settings
+from src.vector_store import Chunk, VectorIndex, hybrid_query
 
-type Config = dict[str, Any]
 type Rows = list[dict[str, str]]
 type Payload = dict[str, Any]
 type Rank = int | None
@@ -35,18 +37,12 @@ app = typer.Typer(add_completion=False, no_args_is_help=True)
 type EvalEmbedder = GeminiEmbedder | SentenceTransformerEmbedder
 
 
-def _application_config() -> Config:
-    if "APP_PATH" not in os.environ:
-        raise RuntimeError("APP_PATH is required to load the application config.")
-    return load_config()
-
-
-def _make_dataset_embedder(spec: str, dimensions: Optional[int]) -> tuple[EvalEmbedder, int]:
+def _make_dataset_embedder(spec: str, dimensions: Optional[int], settings: Settings) -> tuple[EvalEmbedder, int]:
     if spec == "gemini":
         if not os.environ.get("GEMINI_API_KEY"):
             raise RuntimeError("GEMINI_API_KEY is required when using the gemini embedder.")
         resolved_dimensions = dimensions or GEMINI_EMBEDDING_DIMENSIONS
-        embedder = GeminiEmbedder(init_genai_client(), GEMINI_EMBEDDING_MODEL, resolved_dimensions)
+        embedder = GeminiEmbedder(create_genai_client(settings), GEMINI_EMBEDDING_MODEL, resolved_dimensions)
         return embedder, resolved_dimensions
     if spec.startswith("st:") and spec[3:]:
         if dimensions is not None:
@@ -94,16 +90,16 @@ def _load_dataset() -> Rows:
 
 def _rank(payloads: Sequence[Payload], relevant_index: int) -> Rank:
     return next(
-        (rank for rank, payload in enumerate(payloads, 1) if payload["metadata"]["context_index"] == relevant_index),
+        (rank for rank, payload in enumerate(payloads, 1) if payload["context_index"] == relevant_index),
         None,
     )
 
 
 def _evaluate_dataset(
     client: QdrantClient,
-    vector_store: VectorStore,
+    index: VectorIndex,
     model_embedder: EvalEmbedder,
-    config: Config,
+    settings: Settings,
     slug: str,
     model_name: str,
     dimensions: int,
@@ -118,14 +114,14 @@ def _evaluate_dataset(
         raise RuntimeError("The dataset contains no unique contexts to index.")
     chunks = [Chunk(title="none", text=context, metadata={"context_index": i}) for i, context in enumerate(corpus)]
     print(f"Indexing {len(corpus)} unique contexts from {len(rows)} QA rows into {collection_name}.")
-    vector_store.replace_document("dataset-corpus", chunks)
+    index.replace_document("EVAL", "dataset-corpus", chunks)
     query_method = getattr(model_embedder, "embed_queries", None)
     query_vectors = query_method(questions) if query_method else [model_embedder.embed_query(q) for q in questions]
     if len(query_vectors) != len(questions):
         raise RuntimeError(f"Generated {len(query_vectors)} query vectors for {len(questions)} questions.")
 
     ranks: dict[str, list[Rank]] = {mode: [] for mode in ("dense", "bm25", "hybrid")}
-    for question, query_vector, relevant_index in zip(questions, query_vectors, relevant_indices):
+    for question, query_vector, relevant_index in zip(questions, query_vectors, relevant_indices, strict=True):
         bm25_query = models.Document(
             text=question, model=vector_store_module.BM25_MODEL, options=vector_store_module.BM25_OPTIONS
         )
@@ -138,8 +134,10 @@ def _evaluate_dataset(
                 collection_name, query=query, using=vector_name, limit=RESULT_LIMIT, with_payload=True
             )
             ranks[mode].append(_rank([point.payload for point in result.points], relevant_index))
-        hybrid = vector_store.search(question, query_vector, RESULT_LIMIT, config["prefetch_limit"])
-        ranks["hybrid"].append(_rank([payload for payload, _ in hybrid], relevant_index))
+        hybrid = client.query_points(
+            collection_name, **hybrid_query(question, query_vector, RESULT_LIMIT, settings.prefetch_limit)
+        )
+        ranks["hybrid"].append(_rank([point.payload for point in hybrid.points], relevant_index))
 
     metrics: dict[str, dict[str, float]] = {}
     for mode, values in ranks.items():
@@ -179,20 +177,20 @@ def dataset(
 ) -> None:
     """Compare dense, BM25, and hybrid retrieval on the public QA dataset."""
     try:
-        config = _application_config()
-        model_embedder, dimensions_value = _make_dataset_embedder(embedder, dimensions)
+        settings = load_settings()
+        model_embedder, dimensions_value = _make_dataset_embedder(embedder, dimensions, settings)
         model_name = GEMINI_EMBEDDING_MODEL if embedder == "gemini" else embedder[3:]
         rows = _load_dataset()
         slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", embedder.lower())).strip("-")
         collection_name = f"eval_{slug}_{dimensions_value}"
-        client = init_qdrant_client()
+        client = create_qdrant_client()
         if client.collection_exists(collection_name):
             client.delete_collection(collection_name)
-        vector_store = VectorStore(client, collection_name, model_embedder, dimensions_value)
-        vector_store.ensure_collection()
+        index = VectorIndex(client, collection_name, model_embedder)
+        index.ensure_collection()
         try:
             _evaluate_dataset(
-                client, vector_store, model_embedder, config, slug, model_name, dimensions_value, collection_name, rows
+                client, index, model_embedder, settings, slug, model_name, dimensions_value, collection_name, rows
             )
         finally:
             if not keep_collection and client.collection_exists(collection_name):
@@ -203,23 +201,24 @@ def dataset(
 
 
 @app.command()
-def index(collection: str = typer.Option("justicio", "--collection", help="Existing Qdrant collection.")) -> None:
+def index(collection: Optional[str] = typer.Option(None, "--collection", help="Existing Qdrant collection.")) -> None:
     """Check whether each configured BOE query retrieves its expected document."""
     try:
-        config = _application_config()
-        embedder = SentenceTransformerEmbedder(config["embeddings_model_name"])
-        client = init_qdrant_client()
+        settings = load_settings()
+        collection = collection or settings.qdrant_collection
+        embedder = create_embedder(settings)
+        client = create_qdrant_client()
         if not client.collection_exists(collection):
             raise RuntimeError(f"Qdrant collection [{collection}] does not exist.")
-        vector_store = VectorStore(client, collection, embedder, config["embeddings_dimensions"])
-        vector_store.ensure_collection()
-        hits, top_k = 0, config["top_k_results"]
+        hits, top_k = 0, settings.top_k_results
         print(f"Checking {len(QUERIES)} questions against [{collection}] (hit@{top_k}).")
         for number, (expected_id, question) in enumerate(QUERIES, start=1):
             query_vector = embedder.embed_query(question)
-            results = vector_store.search(question, query_vector, top_k, config["prefetch_limit"])
+            results = client.query_points(
+                collection, **hybrid_query(question, query_vector, top_k, settings.prefetch_limit)
+            ).points
             rank = next(
-                (r for r, (p, _) in enumerate(results, 1) if p["metadata"]["identificador"] == expected_id), None
+                (r for r, point in enumerate(results, 1) if point.payload["identificador"] == expected_id), None
             )
             hits += rank is not None
             status = f"rank={rank}" if rank is not None else "miss"

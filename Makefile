@@ -1,13 +1,13 @@
-PYTHON := $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+sync:
+	uv sync --locked --extra cpu
 
-init:
-	$(PYTHON) -m pip install -r requirements.txt
+lint:
+	uv run ruff check
+	uv run ruff format --check
 
-isort:
-	$(PYTHON) -m isort --check-only src evaluation
+format:
+	uv run ruff check --fix
+	uv run ruff format
 
-format: isort
-	$(PYTHON) -m black src evaluation
-
-isort-fix:
-	$(PYTHON) -m isort src evaluation
+test:
+	uv run pytest

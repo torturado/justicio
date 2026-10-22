@@ -6,8 +6,8 @@ set -a
 source "$HOME/.config/justicio.env"
 set +a
 source "$PROJECT_DIR/.venv/bin/activate"
-export APP_PATH="$PROJECT_DIR"
 
 cd "$PROJECT_DIR"
-python -m src.etls.boe.load today
-python -m src.etls.boe_consolidada.load today
+# Updates every bulletin and then the consolidated legislation. Exits with status 1 and emails the report
+# when any source fails.
+exec python -m src.etls.cli daily

@@ -1,9 +1,18 @@
+"""Qdrant collection with the chunks of every source, searched with dense and BM25 vectors.
+
+Each point payload holds the chunk (``text``, ``chunk_title``, ``chunk_index``) and the metadata of its
+document. A document is identified by ``source_name`` and ``identificador``.
+"""
+
 import logging as lg
-import typing as tp
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import date
+from typing import Any
 
 from pydantic import BaseModel
-from qdrant_client import QdrantClient, models
+from qdrant_client import AsyncQdrantClient, QdrantClient, models
 
 from src.embeddings import Embedder
 
@@ -12,15 +21,21 @@ SPARSE_VECTOR = "bm25"
 # BM25 vectors are computed by the Qdrant server (requires a client created with cloud_inference=True)
 BM25_MODEL = "qdrant/bm25"
 BM25_OPTIONS = {"language": "spanish"}
-_PAYLOAD_INDEXES = {
-    "metadata.identificador": models.PayloadSchemaType.KEYWORD,
-    "metadata.fecha_revision": models.PayloadSchemaType.DATETIME,
-    "metadata.numero_oficial": models.PayloadSchemaType.KEYWORD,
-    "metadata.bloque_titulo": models.TextIndexParams(
+PAYLOAD_INDEXES: dict[str, models.PayloadSchemaType | models.TextIndexParams] = {
+    "source_name": models.PayloadSchemaType.KEYWORD,
+    "source_type": models.PayloadSchemaType.KEYWORD,
+    "identificador": models.PayloadSchemaType.KEYWORD,
+    "numero_oficial": models.PayloadSchemaType.KEYWORD,
+    "bloque_titulo": models.TextIndexParams(
         type=models.TextIndexType.TEXT,
         tokenizer=models.TokenizerType.WORD,
         lowercase=True,
     ),
+    # Date (YYYY-MM-DD) from which the indexed text of a consolidated norm is outdated and must be reloaded
+    "fecha_revision": models.PayloadSchemaType.DATETIME,
+    # Watermarks of the incremental loads
+    "fecha_publicacion": models.PayloadSchemaType.DATETIME,
+    "fecha_actualizacion": models.PayloadSchemaType.DATETIME,
 }
 
 UPSERT_BATCH_SIZE = 64
@@ -32,64 +47,119 @@ class Chunk(BaseModel):
     # Context header (document title, section, article...). It is embedded together with the text.
     title: str
     text: str
-    # Document metadata. Must include "identificador", which groups all the chunks of a document.
-    metadata: tp.Dict[str, tp.Any]
+    # Metadata of the document (and of the article or block the chunk belongs to)
+    metadata: dict[str, Any]
 
 
-class VectorStore:
-    """Hybrid (dense + BM25) index of document chunks stored in a Qdrant collection.
+@dataclass(frozen=True)
+class SearchHit:
+    id: str
+    payload: dict[str, Any]
+    score: float
 
-    Points keep the payload layout {"page_content": str, "metadata": dict}.
+
+def point_id(source_name: str, identificador: str, chunk_index: int) -> str:
+    """Deterministic point ID, so that reloading a document overwrites its points."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{source_name}/{identificador}/{chunk_index}"))
+
+
+def match(key: str, value: str) -> models.FieldCondition:
+    return models.FieldCondition(key=key, match=models.MatchValue(value=value))
+
+
+def document_conditions(source_name: str, identificador: str) -> list[models.Condition]:
+    return [match("source_name", source_name), match("identificador", identificador)]
+
+
+def _check_schema(collection: models.CollectionInfo, collection_name: str, dimensions: int) -> None:
+    params = collection.config.params
+    dense = params.vectors.get(DENSE_VECTOR) if isinstance(params.vectors, dict) else None
+    if dense is None or dense.size != dimensions or SPARSE_VECTOR not in (params.sparse_vectors or {}):
+        raise RuntimeError(
+            f"Collection [{collection_name}] does not have the expected vectors "
+            f"('{DENSE_VECTOR}' with {dimensions} dimensions and '{SPARSE_VECTOR}'). "
+            "Delete it and load the documents again."
+        )
+
+
+def hybrid_query(
+    query: str,
+    query_vector: list[float],
+    limit: int,
+    prefetch_limit: int,
+    query_filter: models.Filter | None = None,
+) -> dict[str, Any]:
+    """query_points arguments of a hybrid search: dense and BM25 candidates fused with Reciprocal Rank Fusion.
+
+    RRF scores only express the rank, they are not similarities.
     """
+    return {
+        "prefetch": [
+            models.Prefetch(query=query_vector, using=DENSE_VECTOR, limit=prefetch_limit, filter=query_filter),
+            models.Prefetch(
+                query=models.Document(text=query, model=BM25_MODEL, options=BM25_OPTIONS),
+                using=SPARSE_VECTOR,
+                limit=prefetch_limit,
+                filter=query_filter,
+            ),
+        ],
+        "query": models.FusionQuery(fusion=models.Fusion.RRF),
+        "query_filter": query_filter,
+        "limit": limit,
+        "with_payload": True,
+    }
 
-    def __init__(self, client: QdrantClient, collection_name: str, embedder: Embedder, dimensions: int):
+
+class VectorIndex:
+    """Write access used by the ETL: creates the collection and replaces documents."""
+
+    def __init__(self, client: QdrantClient, collection_name: str, embedder: Embedder):
         self._client = client
         self.collection_name = collection_name
         self._embedder = embedder
-        self._dimensions = dimensions
 
     def ensure_collection(self) -> None:
         """Create the collection if it is missing, or check that the existing one has the expected schema."""
-        logger = lg.getLogger(self.ensure_collection.__name__)
         if not self._client.collection_exists(self.collection_name):
-            self._create_collection()
-            logger.info("Created collection [%s]", self.collection_name)
-            return
-        collection = self._client.get_collection(self.collection_name)
-        params = collection.config.params
-        dense = params.vectors.get(DENSE_VECTOR) if isinstance(params.vectors, dict) else None
-        if dense is None or dense.size != self._dimensions or SPARSE_VECTOR not in (params.sparse_vectors or {}):
-            raise RuntimeError(
-                f"Collection [{self.collection_name}] does not have the expected vectors "
-                f"('{DENSE_VECTOR}' with {self._dimensions} dimensions and '{SPARSE_VECTOR}'). "
-                "Delete it and load the documents again."
+            self._client.create_collection(
+                self.collection_name,
+                vectors_config={
+                    DENSE_VECTOR: models.VectorParams(
+                        size=self._embedder.dimensions, distance=models.Distance.COSINE, on_disk=True
+                    )
+                },
+                sparse_vectors_config={SPARSE_VECTOR: models.SparseVectorParams(modifier=models.Modifier.IDF)},
+                # Searches use int8 vectors kept in RAM; the original vectors stay on disk
+                quantization_config=models.ScalarQuantization(
+                    scalar=models.ScalarQuantizationConfig(type=models.ScalarType.INT8, always_ram=True)
+                ),
+                on_disk_payload=True,
             )
+            lg.getLogger(__name__).info("Created collection [%s]", self.collection_name)
+        collection = self._client.get_collection(self.collection_name)
+        _check_schema(collection, self.collection_name, self._embedder.dimensions)
         payload_schema = collection.payload_schema or {}
-        for field, schema in _PAYLOAD_INDEXES.items():
+        for field, schema in PAYLOAD_INDEXES.items():
             if field not in payload_schema:
                 self._client.create_payload_index(self.collection_name, field, field_schema=schema)
 
-    def has_document(self, identificador: str) -> bool:
-        return (
-            self._client.count(self.collection_name, count_filter=_document_filter(identificador), exact=False).count
-            > 0
-        )
+    def has_document(self, source_name: str, identificador: str) -> bool:
+        count_filter = models.Filter(must=document_conditions(source_name, identificador))
+        return self._client.count(self.collection_name, count_filter=count_filter, exact=True).count > 0
 
-    def count(self) -> int:
-        """Number of indexed chunks in this collection."""
-        return self._client.count(self.collection_name, exact=False).count
+    def delete_document(self, source_name: str, identificador: str) -> None:
+        self._delete(models.Filter(must=document_conditions(source_name, identificador)))
 
-    def delete_document(self, identificador: str) -> None:
-        self._client.delete(
-            self.collection_name, points_selector=models.FilterSelector(filter=_document_filter(identificador))
-        )
+    def replace_document(self, source_name: str, identificador: str, chunks: Sequence[Chunk]) -> None:
+        """Index the chunks of a document, replacing any version previously indexed.
 
-    def replace_document(self, identificador: str, chunks: tp.Sequence[Chunk]) -> None:
-        """Index the chunks of a document, removing any chunk previously indexed for it."""
+        New chunks overwrite the points of the previous version in place and the leftover points are deleted
+        afterwards, so the document stays searchable during the replacement.
+        """
         vectors = self._embedder.embed_documents([(chunk.title, chunk.text) for chunk in chunks])
         points = [
             models.PointStruct(
-                id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{self.collection_name}/{identificador}/{index}")),
+                id=point_id(source_name, identificador, index),
                 vector={
                     DENSE_VECTOR: vector,
                     SPARSE_VECTOR: models.Document(
@@ -97,20 +167,24 @@ class VectorStore:
                     ),
                 },
                 payload={
-                    "page_content": chunk.text,
-                    "metadata": {**chunk.metadata, "identificador": identificador, "chunk_title": chunk.title},
+                    **chunk.metadata,
+                    "source_name": source_name,
+                    "identificador": identificador,
+                    "chunk_title": chunk.title,
+                    "chunk_index": index,
+                    "text": chunk.text,
                 },
             )
-            for index, (chunk, vector) in enumerate(zip(chunks, vectors))
+            for index, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True))
         ]
-        # Embeddings are computed before deleting so that a failed embedding request keeps the previous version
-        self.delete_document(identificador)
         for start in range(0, len(points), UPSERT_BATCH_SIZE):
             self._client.upsert(self.collection_name, points=points[start : start + UPSERT_BATCH_SIZE])
+        leftover = models.FieldCondition(key="chunk_index", range=models.Range(gte=len(points)))
+        self._delete(models.Filter(must=[*document_conditions(source_name, identificador), leftover]))
 
-    def identificadores(self, scroll_filter: models.Filter) -> tp.Set[str]:
+    def identificadores(self, scroll_filter: models.Filter) -> set[str]:
         """Identifiers of the documents with at least one chunk matching the filter."""
-        identificadores = set()
+        identificadores: set[str] = set()
         offset = None
         while True:
             points, offset = self._client.scroll(
@@ -118,75 +192,72 @@ class VectorStore:
                 scroll_filter=scroll_filter,
                 limit=1000,
                 offset=offset,
-                with_payload=["metadata.identificador"],
+                with_payload=["identificador"],
             )
-            identificadores.update(point.payload["metadata"]["identificador"] for point in points)
+            identificadores.update(point.payload["identificador"] for point in points)
             if offset is None:
                 return identificadores
 
-    def search(
+    def latest_date(self, field: str, scroll_filter: models.Filter) -> date | None:
+        """Latest value of an indexed date field among the chunks matching the filter."""
+        points, _ = self._client.scroll(
+            self.collection_name,
+            scroll_filter=scroll_filter,
+            limit=1,
+            order_by=models.OrderBy(key=field, direction=models.Direction.DESC),
+            with_payload=[field],
+        )
+        if not points:
+            return None
+        return date.fromisoformat(str(points[0].payload[field])[:10])
+
+    def _delete(self, points_filter: models.Filter) -> None:
+        self._client.delete(self.collection_name, points_selector=models.FilterSelector(filter=points_filter))
+
+
+class VectorSearch:
+    """Read access used by the service; works with a read-only API key."""
+
+    def __init__(self, client: AsyncQdrantClient, collection_name: str, dimensions: int):
+        self._client = client
+        self.collection_name = collection_name
+        self._dimensions = dimensions
+
+    async def check_collection(self) -> None:
+        if not await self._client.collection_exists(self.collection_name):
+            raise RuntimeError(
+                f"Collection [{self.collection_name}] does not exist. Load documents with the ETL first "
+                "(python -m src.etls.cli --help)."
+            )
+        collection = await self._client.get_collection(self.collection_name)
+        _check_schema(collection, self.collection_name, self._dimensions)
+
+    async def search(
         self,
         query: str,
-        query_vector: tp.List[float],
+        query_vector: list[float],
         limit: int,
         prefetch_limit: int,
-        query_filter: tp.Optional[models.Filter] = None,
-    ) -> tp.List[tp.Tuple[tp.Dict[str, tp.Any], float]]:
-        """Hybrid search: dense and BM25 candidates fused with Reciprocal Rank Fusion.
+        query_filter: models.Filter | None = None,
+    ) -> list[SearchHit]:
+        response = await self._client.query_points(
+            self.collection_name, **hybrid_query(query, query_vector, limit, prefetch_limit, query_filter)
+        )
+        return [
+            SearchHit(id=str(point.id), payload=point.payload or {}, score=point.score) for point in response.points
+        ]
 
-        :return: (payload, score) pairs. RRF scores only express the rank, they are not similarities.
-        """
-        response = self._client.query_points(
-            self.collection_name,
-            prefetch=[
-                models.Prefetch(query=query_vector, using=DENSE_VECTOR, limit=prefetch_limit, filter=query_filter),
-                models.Prefetch(
-                    query=models.Document(text=query, model=BM25_MODEL, options=BM25_OPTIONS),
-                    using=SPARSE_VECTOR,
-                    limit=prefetch_limit,
-                    filter=query_filter,
-                ),
-            ],
-            query=models.FusionQuery(fusion=models.Fusion.RRF),
-            query_filter=query_filter,
-            limit=limit,
-            with_payload=True,
-        )
-        return [(point.payload, point.score) for point in response.points]
+    async def retrieve(self, ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+        """Payloads of the existing points among the given IDs."""
+        if not ids:
+            return {}
+        points = await self._client.retrieve(self.collection_name, ids=list(ids), with_payload=True)
+        return {str(point.id): point.payload or {} for point in points}
 
-    def _create_collection(self) -> None:
-        self._client.create_collection(
-            self.collection_name,
-            vectors_config={
-                DENSE_VECTOR: models.VectorParams(size=self._dimensions, distance=models.Distance.COSINE, on_disk=True)
-            },
-            sparse_vectors_config={SPARSE_VECTOR: models.SparseVectorParams(modifier=models.Modifier.IDF)},
-            # Searches use int8 vectors kept in RAM; the original vectors stay on disk
-            quantization_config=models.ScalarQuantization(
-                scalar=models.ScalarQuantizationConfig(type=models.ScalarType.INT8, always_ram=True)
-            ),
-            on_disk_payload=True,
-        )
-        self._client.create_payload_index(
-            self.collection_name, "metadata.identificador", field_schema=models.PayloadSchemaType.KEYWORD
-        )
-        # Date (YYYY-MM-DD) from which the indexed text of a consolidated norm is outdated and must be reloaded
-        self._client.create_payload_index(
-            self.collection_name, "metadata.fecha_revision", field_schema=models.PayloadSchemaType.DATETIME
-        )
-        self._client.create_payload_index(
-            self.collection_name,
-            "metadata.numero_oficial",
-            field_schema=models.PayloadSchemaType.KEYWORD,
-        )
-        self._client.create_payload_index(
-            self.collection_name,
-            "metadata.bloque_titulo",
-            field_schema=_PAYLOAD_INDEXES["metadata.bloque_titulo"],
-        )
+    async def sample(self, limit: int) -> list[dict[str, Any]]:
+        """Payloads of some chunks (in point ID order, which is effectively random)."""
+        points, _ = await self._client.scroll(self.collection_name, limit=limit, with_payload=["text", "chunk_title"])
+        return [point.payload or {} for point in points]
 
-
-def _document_filter(identificador: str) -> models.Filter:
-    return models.Filter(
-        must=[models.FieldCondition(key="metadata.identificador", match=models.MatchValue(value=identificador))]
-    )
+    async def count(self, count_filter: models.Filter | None = None) -> int:
+        return (await self._client.count(self.collection_name, count_filter=count_filter, exact=False)).count

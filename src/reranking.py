@@ -1,33 +1,42 @@
-"""Cross-encoder reranking of the vector store's (payload, score) candidates."""
+"""Cross-encoder relevance scoring of retrieved chunks.
 
-from __future__ import annotations
+The same model runs with PyTorch (``CrossEncoderReranker``, for GPUs) or as an int8 OpenVINO model
+(``OpenVINOReranker``, for CPUs). On an Intel Core i5-13500, reranking 40 chunks takes about 6 s with OpenVINO
+instead of 19 s with PyTorch, and both rank the evaluation set equally within one question (see
+evaluation/rag/README.md).
+"""
 
-import typing as tp
-from threading import Lock
+import logging as lg
+import shutil
+import tempfile
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Protocol
 
-if tp.TYPE_CHECKING:
-    from sentence_transformers import CrossEncoder
+import numpy as np
 
-PayloadT = tp.TypeVar("PayloadT", bound=tp.Mapping[str, object])
+# Measurement ID of the anonymous usage telemetry that OpenVINO's converter and NNCF send unless it is declined
+_OPENVINO_TELEMETRY_ID = "G-W5E9RNLD4H"
+
+
+class Reranker(Protocol):
+    def score(self, query: str, texts: Sequence[str]) -> list[float]:
+        """Relevance score of each text for the query, in the same order as the texts."""
+        ...
 
 
 class CrossEncoderReranker:
-    """Reuse a scalar-scoring CrossEncoder, loaded on the first nonempty request.
+    """Scores (query, text) pairs with a sentence-transformers CrossEncoder, loaded on construction.
 
-    ``model`` accepts a model name/path or an existing CrossEncoder. Explicit
-    ``device`` and ``max_length`` overrides also apply to an injected model on
-    first use; otherwise its configuration is preserved. ``max_length=None``
-    keeps the model's token limit. Truncation is handled by its tokenizer.
+    Scores are the model's relevance probabilities, not calibrated confidences. Texts longer than
+    ``max_length`` tokens are truncated, so chunks should fit in that window.
 
-    Initialization and inference are serialized per instance for worker-thread
-    use. Share one instance and call it off the async service's event loop:
-    ``await asyncio.to_thread(reranker.rerank, query, candidates, top_k=10)``.
-    An injected model should not be concurrently used outside this wrapper.
+    Not thread-safe: the service calls it from its single inference thread.
     """
 
     def __init__(
         self,
-        model: str | CrossEncoder,
+        model_name: str,
         *,
         device: str | None = None,
         max_length: int | None = None,
@@ -35,75 +44,114 @@ class CrossEncoderReranker:
     ) -> None:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
-        if max_length is not None and max_length <= 0:
-            raise ValueError("max_length must be positive or None")
-        self._model_source = model
-        self._device = device
+        from sentence_transformers import CrossEncoder
+
+        self._model = CrossEncoder(model_name, device=device, max_length=max_length)
+        self._batch_size = batch_size
+
+    def score(self, query: str, texts: Sequence[str]) -> list[float]:
+        if not texts:
+            return []
+        scores = self._model.predict(
+            [(query, text) for text in texts],
+            batch_size=self._batch_size,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+        )
+        if scores.ndim != 1 or len(scores) != len(texts):
+            raise ValueError("The cross-encoder must return one scalar relevance score per text")
+        return [float(score) for score in scores]
+
+
+class OpenVINOReranker:
+    """int8 OpenVINO version of a cross-encoder, created by ``export``. Scores like CrossEncoderReranker.
+
+    Not thread-safe: the service calls it from its single inference thread.
+    """
+
+    MODEL_FILE = "model.xml"
+
+    def __init__(self, model_dir: Path, *, max_length: int, batch_size: int = 8) -> None:
+        import openvino as ov
+        from transformers import AutoTokenizer
+
+        self._tokenizer = AutoTokenizer.from_pretrained(model_dir)
+        self._model = ov.Core().compile_model(model_dir / self.MODEL_FILE, "CPU")
         self._max_length = max_length
         self._batch_size = batch_size
-        self._model: CrossEncoder | None = None
-        self._lock = Lock()
 
-    def rerank(
-        self,
-        query: str,
-        candidates: tp.Sequence[tp.Tuple[PayloadT, float]],
-        *,
-        top_k: int | None = None,
-    ) -> tp.List[tp.Tuple[PayloadT, float]]:
-        """Return original payloads with descending cross-encoder scores.
-
-        Score each query against ``metadata.chunk_title`` (when present) and
-        ``page_content``. Input RRF scores are replaced, not combined with the
-        model scores; ties retain the input order. Scores are model-specific,
-        not calibrated probabilities. All candidates are scored before top_k
-        is applied. Empty input or top_k=0 returns [] without loading a model.
-        """
-        if top_k is not None and top_k < 0:
-            raise ValueError("top_k must be nonnegative or None")
-        if not candidates or top_k == 0:
+    def score(self, query: str, texts: Sequence[str]) -> list[float]:
+        logits = [
+            self._model(
+                _encode(
+                    self._tokenizer,
+                    [(query, text) for text in texts[start : start + self._batch_size]],
+                    self._max_length,
+                )
+            )[0][:, 0]
+            for start in range(0, len(texts), self._batch_size)
+        ]
+        if not logits:
             return []
+        return [float(score) for score in 1 / (1 + np.exp(-np.concatenate(logits)))]
 
-        pairs = [(query, _document_text(payload)) for payload, _ in candidates]
-        with self._lock:
-            model = self._get_model()
-            scores = model.predict(
-                pairs,
-                batch_size=self._batch_size,
-                show_progress_bar=False,
-                convert_to_numpy=True,
-                convert_to_tensor=False,
+    @classmethod
+    def export(
+        cls, model_name: str, model_dir: Path, calibration_pairs: Sequence[tuple[str, str]], max_length: int
+    ) -> None:
+        """Convert a Hugging Face cross-encoder to OpenVINO and quantize it to int8.
+
+        The (query, text) calibration pairs should resemble the reranked inputs: quantizing with in-domain text
+        keeps the ranking of the original model. Takes a few minutes and several GB of memory.
+        """
+        import nncf
+        import openvino as ov
+        import openvino_telemetry
+        import torch
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+        logger = lg.getLogger(cls.export.__name__)
+        openvino_telemetry.Telemetry.opt_out(tid=_OPENVINO_TELEMETRY_ID)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(model_name).eval()
+        example = tokenizer(["pregunta"], ["texto"], return_tensors="pt")
+        with torch.no_grad():
+            ov_model = ov.convert_model(
+                model, example_input={"input_ids": example["input_ids"], "attention_mask": example["attention_mask"]}
             )
-        if scores.ndim != 1 or len(scores) != len(candidates):
-            raise ValueError("The cross-encoder must return one scalar relevance score per candidate")
-
-        reranked = [(payload, float(score)) for (payload, _), score in zip(candidates, scores)]
-        reranked.sort(key=lambda candidate: candidate[1], reverse=True)
-        return reranked[:top_k]
-
-    def _get_model(self) -> CrossEncoder:
-        # Called under the lock so concurrent first requests load only one model.
-        if self._model is None:
-            if isinstance(self._model_source, str):
-                from sentence_transformers import CrossEncoder
-
-                model = CrossEncoder(self._model_source, device=self._device, max_length=self._max_length)
-            else:
-                model = self._model_source
-                if self._device is not None:
-                    model.to(self._device)
-                if self._max_length is not None:
-                    model.max_length = self._max_length
-            self._model = model
-        return self._model
+        calibration = [_encode(tokenizer, [pair], max_length) for pair in calibration_pairs]
+        quantized = nncf.quantize(
+            ov_model, nncf.Dataset(calibration), model_type=nncf.ModelType.TRANSFORMER, subset_size=len(calibration)
+        )
+        model_dir.parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(dir=model_dir.parent))
+        try:
+            ov.save_model(quantized, staging / cls.MODEL_FILE)
+            tokenizer.save_pretrained(staging)
+            # Atomic, so that a concurrent export or an interrupted one never leaves a partial model
+            staging.rename(model_dir)
+        except OSError:
+            if not (model_dir / cls.MODEL_FILE).exists():
+                raise
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        logger.info("Exported int8 OpenVINO reranker to %s", model_dir)
 
 
-def _document_text(payload: tp.Mapping[str, object]) -> str:
-    text = payload["page_content"]
-    if not isinstance(text, str):
-        raise TypeError("Candidate page_content must be a string")
-    metadata = payload.get("metadata")
-    title = metadata.get("chunk_title") if isinstance(metadata, tp.Mapping) else None
-    if isinstance(title, str) and title and title.casefold() != "none":
-        return f"{title}\n{text}"
-    return text
+def _encode(tokenizer, pairs: Sequence[tuple[str, str]], max_length: int) -> dict[str, np.ndarray]:
+    encoded = tokenizer(
+        [query for query, _ in pairs],
+        [text for _, text in pairs],
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+        return_tensors="np",
+    )
+    return {"input_ids": encoded["input_ids"], "attention_mask": encoded["attention_mask"]}
+
+
+def openvino_model_dir(model_name: str) -> Path:
+    """Where the OpenVINO export of a model is kept: next to the Hugging Face models, so that it persists."""
+    from huggingface_hub import constants
+
+    return Path(constants.HF_HOME) / "justicio" / f"{model_name.replace('/', '--')}-openvino-int8"

@@ -1,122 +1,160 @@
-"""Measure exact-law-and-article retrieval before and after cross-encoder reranking."""
+"""Measure retrieval of the expected sources and, optionally, the grounding and abstention of the answers."""
 
 import argparse
 import asyncio
 import json
 import re
-import typing as tp
 import unicodedata
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
+
+from src.initialize import initialize_logging
+from src.service.answering import PromptSource, citation_numbers
+from src.service.retrieval import select_hits
+from src.service.services import Services, create_services
 
 QUESTIONS_PATH = Path(__file__).with_name("questions.json")
 _ARTICLE_TITLE = re.compile(r"^art[ií]culo\s+(\d+[a-z]?)\b", re.IGNORECASE)
-_CITATION = re.compile(r"\[(\d+)\]")
 
 
 def _normalize(value: str) -> str:
     return unicodedata.normalize("NFKC", value).strip().casefold()
 
 
-def _matches_target(payload: tp.Mapping[str, tp.Any], target: tp.Mapping[str, str]) -> bool:
-    metadata = payload.get("metadata") or payload
-    identifier = metadata.get("identificador") or metadata.get("boe_id")
-    if identifier != target["boe_id"]:
+def _matches(payload: Mapping[str, Any], target: Mapping[str, str]) -> bool:
+    if payload.get("identificador") != target["identificador"]:
         return False
-    title = _normalize(str(metadata.get("bloque_titulo") or metadata.get("article") or ""))
-    article_match = _ARTICLE_TITLE.match(title)
+    if "article" not in target:
+        return True
+    article_match = _ARTICLE_TITLE.match(_normalize(str(payload.get("bloque_titulo") or "")))
     return article_match is not None and article_match.group(1) == target["article"].casefold()
 
 
-def _metrics(
-    docs: tp.Sequence[tp.Tuple[tp.Mapping[str, tp.Any], float]], target: tp.Mapping[str, str]
-) -> tp.Dict[str, tp.Any]:
-    ranks = [rank for rank, (payload, _) in enumerate(docs, start=1) if _matches_target(payload, target)]
-    first_rank = ranks[0] if ranks else None
-    return {
-        "hit_at_1": bool(first_rank and first_rank <= 1),
-        "hit_at_5": bool(first_rank and first_rank <= 5),
-        "hit_at_12": bool(first_rank and first_rank <= 12),
-        "reciprocal_rank": 1 / first_rank if first_rank else 0,
-        "first_target_rank": first_rank,
-        "candidate_count": len(docs),
+def _metrics(payloads: Sequence[Mapping[str, Any]], targets: Sequence[Mapping[str, str]], top_k: int) -> dict[str, Any]:
+    """Rank of the first chunk of each target; a hit at k requires every target within the first k chunks."""
+    ranks = [
+        next((rank for rank, payload in enumerate(payloads, start=1) if _matches(payload, target)), None)
+        for target in targets
+    ]
+    metrics: dict[str, Any] = {
+        f"hit_at_{k}": all(rank is not None and rank <= k for rank in ranks) for k in sorted({1, 5, top_k})
     }
+    metrics["reciprocal_rank"] = sum(1 / rank for rank in ranks if rank) / len(ranks)
+    metrics["target_ranks"] = ranks
+    return metrics
 
 
-async def _evaluate(collection_name: str, include_answers: bool) -> tp.Dict[str, tp.Any]:
-    # Importing the service uses the same embedder, Qdrant filters, and reranker as /qa.
-    from src.service.main import RERANKER, qa, retrieve
+def _targets_found(payloads: Sequence[Mapping[str, Any]], targets: Sequence[Mapping[str, str]]) -> bool:
+    return all(any(_matches(payload, target) for payload in payloads) for target in targets)
 
-    questions = json.loads(QUESTIONS_PATH.read_text())
-    results = []
-    for question in questions:
-        candidates = await retrieve(question["query"], collection_name, rerank=False)
-        reranked = await asyncio.to_thread(RERANKER.rerank, question["query"], candidates)
-        target = {"boe_id": question["boe_id"], "article": question["article"]}
-        result = {
-            "id": question["id"],
-            "query": question["query"],
-            "target": target,
-            "hybrid": _metrics(candidates, target),
-            "reranked": _metrics(reranked, target),
+
+def _mean(values: Sequence[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+async def _evaluate_question(services: Services, question: Mapping[str, Any], include_answers: bool) -> dict[str, Any]:
+    settings = services.settings
+    retriever = services.retriever
+    sources = question.get("sources") or settings.default_sources
+    targets = question["targets"]
+    result: dict[str, Any] = {"id": question["id"], "query": question["query"], "targets": targets}
+
+    if targets:
+        hybrid = await retriever.search(question["query"], sources)
+        reranked = await retriever.rerank(question["query"], hybrid)
+        score_by_id = {hit.id: score for hit, score in reranked}
+        scores = [score_by_id[hit.id] for hit in hybrid]
+        top_k = settings.top_k_results
+        result["hybrid"] = _metrics([hit.payload for hit in hybrid], targets, top_k)
+        result["reranked"] = _metrics([hit.payload for hit, _ in reranked], targets, top_k)
+        # Whether every target is among the sources given to the LLM, with and without keeping the best
+        # hybrid results (HYBRID_HEAD_SIZE)
+        selected = select_hits(hybrid, scores, top_k) if hybrid else []
+        unprotected = select_hits(hybrid, scores, top_k, head_size=0) if hybrid else []
+        result["selected"] = _targets_found([hit.payload for hit, _ in selected], targets)
+        result["selected_without_hybrid_head"] = _targets_found([hit.payload for hit, _ in unprotected], targets)
+
+    if include_answers:
+        retrieved = await retriever.retrieve(question["query"], sources)
+        if retrieved:
+            answer, validation = await services.answerer.answer(
+                question["query"],
+                [PromptSource(title=source.title, text=source.text) for source in retrieved],
+                scope="; ".join(settings.sources[source] for source in sources),
+            )
+            status = validation.status
+        else:
+            answer, status = "", "not_run"
+        cited = [number for number in citation_numbers(answer) if 1 <= number <= len(retrieved)]
+        result["answer"] = {
+            "text": answer,
+            "grounding_status": status,
+            "abstained": status != "passed",
+            "citation_count": len(citation_numbers(answer)),
+            "valid_citation_count": len(cited),
+            "targets_cited": bool(targets)
+            and _targets_found([retrieved[number - 1].payload for number in cited], targets),
         }
-        if include_answers:
-            answer_result = await qa(input_query=question["query"], collection_name=collection_name)
-            citations = [int(number) for number in _CITATION.findall(answer_result["answer"])]
-            source_by_number = {source["number"]: source for source in answer_result["sources"]}
-            result["answer"] = answer_result["answer"]
-            result["grounding_validation"] = answer_result.get("grounding_validation")
-            result["citation_grounding"] = {
-                "citation_numbers": citations,
-                "unknown_citations": sorted(set(citations) - source_by_number.keys()),
-                "target_article_cited": any(
-                    number in source_by_number and _matches_target(source_by_number[number], target)
-                    for number in citations
-                ),
-            }
-        results.append(result)
+    return result
 
-    def aggregate(key: str) -> tp.Dict[str, float]:
-        return {
-            metric: sum(item[key][metric] for item in results) / len(results)
-            for metric in ("hit_at_1", "hit_at_5", "hit_at_12", "reciprocal_rank")
-        }
 
-    report = {
-        "collection": collection_name,
+async def _evaluate(include_answers: bool) -> dict[str, Any]:
+    questions = json.loads(QUESTIONS_PATH.read_text(encoding="utf-8"))
+    async with create_services() as services:
+        results = [await _evaluate_question(services, question, include_answers) for question in questions]
+
+    answerable = [result for result in results if result["targets"]]
+    report: dict[str, Any] = {
         "question_count": len(results),
-        "hybrid_mean": aggregate("hybrid"),
-        "reranked_mean": aggregate("reranked"),
-        "results": results,
+        "answerable_count": len(answerable),
+        "retrieval": {
+            stage: {
+                metric: _mean([float(result[stage][metric]) for result in answerable])
+                for metric in answerable[0][stage]
+                if metric != "target_ranks"
+            }
+            for stage in ("hybrid", "reranked")
+        }
+        if answerable
+        else {},
+        "selected_hit_rate": _mean([float(result["selected"]) for result in answerable]),
+        "selected_without_hybrid_head_hit_rate": _mean(
+            [float(result["selected_without_hybrid_head"]) for result in answerable]
+        ),
     }
     if include_answers:
-        answers_with_citations = [
-            item["citation_grounding"] for item in results if item["citation_grounding"]["citation_numbers"]
-        ]
-        citation_count = sum(len(item["citation_numbers"]) for item in answers_with_citations)
-        unknown_citation_count = sum(len(item["unknown_citations"]) for item in answers_with_citations)
-        report["citation_grounding_mean"] = {
+        unanswerable = [result for result in results if not result["targets"]]
+        citations = sum(result["answer"]["citation_count"] for result in results)
+        report["answers"] = {
+            "answered_rate": _mean([float(not result["answer"]["abstained"]) for result in answerable]),
+            "targets_cited_rate": _mean([float(result["answer"]["targets_cited"]) for result in answerable]),
+            "abstention_rate_unanswerable": _mean([float(result["answer"]["abstained"]) for result in unanswerable]),
+            # An unanswerable question answered with citations that passed the audit usually states that the
+            # sources do not contain the answer; review these answers in "results"
+            "unanswerable_answered_ids": [result["id"] for result in unanswerable if not result["answer"]["abstained"]],
             "citation_reference_precision": (
-                (citation_count - unknown_citation_count) / citation_count if citation_count else None
+                sum(result["answer"]["valid_citation_count"] for result in results) / citations if citations else None
             ),
-            "target_article_cited_rate": sum(item["target_article_cited"] for item in results) / len(results),
         }
+    report["results"] = results
     return report
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--collection", default="justicio", help="Qdrant collection to evaluate")
     parser.add_argument("--output", type=Path, help="Optional path for the JSON report")
     parser.add_argument(
         "--answers",
         action="store_true",
-        help="Call Gemini and measure whether citations resolve to returned sources and cite the expected article",
+        help="Call Gemini to measure answer rate, cited targets and abstention on unanswerable questions",
     )
     args = parser.parse_args()
-    report = asyncio.run(_evaluate(args.collection, args.answers))
+    initialize_logging()
+    report = asyncio.run(_evaluate(args.answers))
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
-        args.output.write_text(rendered + "\n")
+        args.output.write_text(rendered + "\n", encoding="utf-8")
     print(rendered)
 
 

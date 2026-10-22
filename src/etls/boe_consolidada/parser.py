@@ -3,14 +3,14 @@ import re
 import typing as tp
 from datetime import date, datetime, timezone
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import TextSplitter
 from lxml import etree
 
-from src.etls.boe_consolidada.defs import CHUNK_OVERLAP, CHUNK_SIZE
 from src.etls.common.utils import normalize_whitespace, xml_element_text, xml_to_text
 from src.vector_store import Chunk
 
-_TEXT_SPLITTER = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+SOURCE_NAME = "BOE"
+SOURCE_TYPE = "Legislación consolidada"
 _HEADING_PREFIX_LEVELS = {
     "libro": 1,
     "parte": 1,
@@ -59,7 +59,10 @@ def catalogue_item_from_document(document_root: etree._Element) -> tp.Dict[str, 
     return item
 
 
-def build_chunks(catalogue_item: tp.Dict[str, tp.Any], document_root: etree._Element, today: date) -> tp.List[Chunk]:
+def build_chunks(
+    catalogue_item: tp.Dict[str, tp.Any], document_root: etree._Element, today: date, text_splitter: TextSplitter
+) -> tp.List[Chunk]:
+    """Chunks of the current text of a norm, split by article or block; a long block is split further."""
     logger = lg.getLogger(build_chunks.__name__)
     text_element = document_root.find("./data/texto")
     if text_element is None:
@@ -125,7 +128,7 @@ def build_chunks(catalogue_item: tp.Dict[str, tp.Any], document_root: etree._Ele
             "fecha_vigencia_version": version_date.isoformat() if version_date else None,
             "id_norma_version": version.get("id_norma"),
         }
-        for part in _TEXT_SPLITTER.split_text(body):
+        for part in text_splitter.split_text(body):
             if part.strip():
                 chunks.append(Chunk(title=title, text=part, metadata=version_metadata.copy()))
 
@@ -148,8 +151,8 @@ def _document_metadata(catalogue_item: tp.Dict[str, tp.Any], revision: tp.Option
         "url_eli": catalogue_item.get("url_eli") or None,
         "url_html_consolidada": catalogue_item.get("url_html_consolidada") or None,
         "fecha_revision": revision.isoformat() if revision else None,
-        "source_name": "BOE",
-        "source_type": "Legislación consolidada",
+        "source_name": SOURCE_NAME,
+        "source_type": SOURCE_TYPE,
         "datetime_insert": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -232,7 +235,7 @@ def _heading_text(version: etree._Element) -> str:
 
     if grouped:
         heading_parts: tp.List[str] = []
-        for prefix, values in grouped.items():
+        for values in grouped.values():
             if "full" in values:
                 heading_parts.append(_format_full_heading(values["full"]))
             elif number := values.get("num"):

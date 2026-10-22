@@ -21,86 +21,76 @@ docker run -d --name justicio-qdrant \
   qdrant/qdrant:v1.19.2
 ```
 
-The REST API is at `http://localhost:6333`; the dashboard is at `http://localhost:6333/dashboard`. The local API key is the `service.api_key` value in `config/example_qdrant_local.yaml`.
+The REST API is at `http://localhost:6333`; the dashboard is at `http://localhost:6333/dashboard`. The client connects through gRPC on port 6334. `config/example_qdrant_local.yaml` defines a read-write key (`service.api_key`), for the ETL, and a read-only key (`service.read_only_api_key`), for the API service. Generate your own keys with `openssl rand -hex 32` for anything but local tests.
 
 ## Install application dependencies
 
-Create a Python 3.12 environment with uv:
+Install [uv](https://docs.astral.sh/uv/) and create the environment from the lockfile. Choose the PyTorch build with an extra:
 
 ```sh
-uv python install 3.12
-uv venv --python 3.12 .venv
-source .venv/bin/activate
-uv pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple torch
-uv pip install -r requirements.txt
+uv sync --locked --extra cpu    # CPU-only hosts
+uv sync --locked --extra rocm   # AMD GPUs with ROCm 7.2
+uv sync --locked                # PyPI's default build (CUDA on Linux)
 ```
 
-Or use the standard library virtual environment module and pip:
+The environment is created in `.venv`; run commands with `uv run --no-sync ...` or after `source .venv/bin/activate`.
 
-```sh
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple torch
-python -m pip install -r requirements.txt
-```
+The first startup downloads BGE-M3 and the reranker from Hugging Face (about 2.2 GB each). With `reranker_backend: openvino` (the default, for CPUs), the service then converts the reranker to an int8 OpenVINO model calibrated with 128 chunks of the collection, so load some documents before the first start. The export takes about three minutes and several GB of memory once, and is kept in `$HF_HOME/justicio/`; delete that directory to export again, e.g. after changing the model. Before exporting, the service declines the anonymous usage telemetry that OpenVINO's converter and NNCF send by default (it writes `~/intel/openvino_telemetry`). A service process with the embedder and the int8 reranker uses about 4.7 GB of RAM. Sentence Transformers uses an available CUDA or ROCm device automatically and otherwise falls back to CPU. On the measured RX 9060 XT with ROCm, set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` before indexing to enable the faster attention implementation. With ROCm 7.2 and PyTorch 2.14 at its stock limits, sustained half-precision embedding hung that GPU's firmware (`amdgpu: MES might be in unrecoverable state`); because the GPU also drove the displays, the machine needed a reboot. With the GPU clock lowered by 150 MHz and the power limit set to 150 W instead of 182 W, the same load ran for 30 minutes without errors at about 2.6 GHz and an 84 °C junction temperature. The limits were set with [LACT](https://github.com/ilya-zlobintsev/LACT), whose clock controls require the kernel parameter `amdgpu.ppfeaturemask=0xfff7ffff`. If a GPU hangs during indexing, apply similar limits or index on the CPU.
 
-Set the application environment:
+## Configure the environment
 
-```sh
-export APP_PATH="$PWD"
-export GEMINI_API_KEY="<Gemini API key>"
-export QDRANT_API_URL="http://localhost:6333"
-export QDRANT_API_KEY="<service.api_key from config/example_qdrant_local.yaml>"
-export TAVILY_API_KEY="<Tavily API key>"
-export SENDGRID_API_KEY="<SendGrid API key>"
-# Optional:
-export LANGTRACE_API_KEY="<Langtrace API key>"
-```
+| Variable | Used by | Required |
+| --- | --- | --- |
+| `QDRANT_API_URL` | ETL, service | Yes, e.g. `http://localhost:6333` |
+| `QDRANT_API_KEY` | ETL (read-write key), service (read-only key) | If Qdrant requires a key |
+| `GEMINI_API_KEY` | Service | Yes |
+| `JUSTICIO_API_KEY` | Service: value of the `X-API-Key` header | Yes |
+| `TAVILY_API_KEY` | Service: BOE web-search endpoints | No |
+| `LANGTRACE_API_KEY` | Service: tracing and `/qa_feedback` | No |
+| `SENDGRID_API_KEY`, `ETL_NOTIFICATION_EMAIL` | ETL: run reports | No |
 
-`QDRANT_API_KEY` can be omitted when connecting to a local Qdrant server without authentication. The application needs Gemini and Qdrant credentials at startup. Gemini generates answers; BGE-M3 creates embeddings locally. Tavily is only needed for the BOE web-search endpoint. SendGrid is used by ETL jobs to email load summaries; Langtrace is optional.
-
-The first startup downloads BGE-M3 from Hugging Face (about 2.2 GB); the model uses around 2 GB of RAM at runtime. Sentence Transformers uses an available CUDA or ROCm device automatically and otherwise falls back to CPU. For GPU indexing, run the ETL in an environment with a matching GPU-enabled PyTorch build already installed; the CPU-only installation above is for CPU hosts. On the measured RX 9060 XT with ROCm, set `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` before indexing to enable the faster attention implementation.
-
-The `render.yaml` blueprint still selects [Render's free plan](https://render.com/docs/compute-plans), which provides 512 MB RAM. That is below BGE-M3's runtime requirement, so the service needs a larger compute plan before deploying this model there.
+The application settings (models, collection, sources, limits and prompts) are in `config/config.yaml`; unknown or missing keys make startup fail.
 
 ## Load data
 
-Load daily BOE documents for a date range:
+The ETL creates the `legal_documents` collection if it does not exist. Load one consolidated norm, the full current catalogue, or daily bulletins for a date range:
 
 ```sh
-python -m src.etls.boe.load dates 2024/01/01 2024/01/07
+uv run --no-sync python -m src.etls.cli consolidated document BOE-A-2015-10565
+uv run --no-sync python -m src.etls.cli consolidated all
+uv run --no-sync python -m src.etls.cli bulletin dates BOE 2024/01/01 2024/01/07
 ```
 
-Load one consolidated norm or the full current catalogue:
+The initial `all` load processes about 12,400 norms. Embeddings are generated locally, so indexing has no per-token embedding charge. On the measured RX 9060 XT with ROCm, the previous chunking (6,000 characters) took about 2–2.5 hours; chunks are now at most 1,500 characters, so expect more chunks and a longer load. On a 20-thread CPU, a law of about 200 chunks takes around two minutes.
 
-```sh
-python -m src.etls.boe_consolidada.load document BOE-A-2015-10565
-python -m src.etls.boe_consolidada.load all
-```
+### Collections from previous versions
 
-The initial `all` load processes about 12,400 norms and produces roughly 360,000 article fragments. Embeddings are generated locally, so indexing has no per-token Gemini embedding charge. On the measured RX 9060 XT with ROCm, a full load is estimated at about 2–2.5 hours; CPU indexing takes longer. The ETL still needs `GEMINI_API_KEY` because shared application initialization creates the answer-generation client.
-
+Previous versions stored each source in its own collection (`justicio`, `bocm`, `bopz`, `bopv`, `boja`, `boa`) with a different payload layout and larger chunks. They are not read anymore: load the data again into `legal_documents` and then delete the old collections.
 
 ## Run the service
 
 ```sh
-uvicorn src.service.main:APP --host 0.0.0.0 --port 5001 --workers 1 --timeout-keep-alive 125 --log-level info
+uv run --no-sync uvicorn src.service.main:APP --host 0.0.0.0 --port 5001 --workers 1 --timeout-keep-alive 125 --log-level info
 ```
 
-Open `http://localhost:5001/docs` for the API documentation.
+Open `http://localhost:5001/docs` for the API documentation. Startup fails if the collection does not exist yet.
 
-## Existing Qdrant collections
-
-The application creates missing collections at startup. Existing collections must have the current schema: a 1024-dimensional `dense` vector and a `bm25` sparse vector. Startup fails with a message if a collection has the previous 1536-dimensional schema. Recreate those collections and reload their documents; vectors from the Gemini embedding model cannot be reused.
-
-For scheduled ingestion, `doc/cron_etl_daily_public.sh` runs both daily BOE jobs. Put the required environment variables in a shell-compatible `~/.config/justicio.env` file, using plain assignments such as:
+The models run on a single inference thread per process, so use one worker per host and scale horizontally; each process needs its own copy of the models in memory. With Docker:
 
 ```sh
-GEMINI_API_KEY=your-gemini-api-key
-QDRANT_API_URL=http://localhost:6333
-QDRANT_API_KEY=your-qdrant-api-key
-TAVILY_API_KEY=your-tavily-api-key
-SENDGRID_API_KEY=your-sendgrid-api-key
+bin/build
+bin/run   # forwards the variables above that are set in your shell
 ```
 
-Then use the example schedule in `doc/crontab_e.sh`.
+## Schedule the ETL
+
+`doc/cron_etl_daily_public.sh` runs `python -m src.etls.cli daily` from the project's `.venv`. Put the ETL environment variables in a shell-compatible `~/.config/justicio.env` file, using plain assignments such as:
+
+```sh
+QDRANT_API_URL=http://localhost:6333
+QDRANT_API_KEY=your-read-write-qdrant-api-key
+SENDGRID_API_KEY=your-sendgrid-api-key
+ETL_NOTIFICATION_EMAIL=you@example.com
+```
+
+Then use the example schedule in `doc/crontab_e.sh`. The command exits with status 1 when a source fails, and the emailed report lists the failed days and documents.

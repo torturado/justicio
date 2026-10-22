@@ -1,42 +1,49 @@
 // List collections
 GET collections
 
-// Inspect the main collection
-GET collections/justicio
+// Inspect the collection with the chunks of every source
+GET collections/legal_documents
 
-// Scroll consolidated legislation and return current metadata fields
-POST collections/justicio/points/scroll
+// Scroll consolidated legislation and return some metadata fields
+POST collections/legal_documents/points/scroll
 {
   "limit": 20,
   "with_payload": [
-    "metadata.identificador",
-    "metadata.fecha_publicacion",
-    "metadata.source_type",
-    "metadata.rango"
+    "identificador",
+    "bloque_titulo",
+    "chunk_index",
+    "fecha_vigencia_version",
+    "rango"
   ],
   "filter": {
     "must": [
-      {
-        "key": "metadata.source_type",
-        "match": {
-          "value": "Legislación consolidada"
-        }
-      }
+      { "key": "source_name", "match": { "value": "BOE" } },
+      { "key": "source_type", "match": { "value": "Legislación consolidada" } }
     ]
   }
 }
 
-// Count points for a norm
-POST collections/justicio/points/count
+// Count the chunks of a document
+POST collections/legal_documents/points/count
 {
   "filter": {
     "must": [
-      {
-        "key": "metadata.identificador",
-        "match": {
-          "value": "BOE-A-2015-10565"
-        }
-      }
+      { "key": "source_name", "match": { "value": "BOE" } },
+      { "key": "identificador", "match": { "value": "BOE-A-2015-10565" } }
+    ]
+  }
+}
+
+// Latest publication date indexed for a bulletin (the start of its next update)
+POST collections/legal_documents/points/scroll
+{
+  "limit": 1,
+  "with_payload": ["fecha_publicacion"],
+  "order_by": { "key": "fecha_publicacion", "direction": "desc" },
+  "filter": {
+    "must": [
+      { "key": "source_name", "match": { "value": "BOCM" } },
+      { "key": "source_type", "match": { "value": "Boletin" } }
     ]
   }
 }
