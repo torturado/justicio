@@ -1,62 +1,51 @@
 import logging as lg
-import os
-import typing as tp
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 
-import pinecone
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from retry import retry
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from src.etls.common.metadata import MetadataDocument
-from src.etls.common.utils import TextLoader
-from src.initialize import initialize_logging
-
-initialize_logging()
+from src.vector_store import Chunk, VectorIndex
 
 
-class ETL:
-    def __init__(self, config_loader, vector_store):
-        self._config_loader = config_loader
-        self._vector_store = vector_store
+@dataclass
+class IndexStats:
+    indexed: int = 0
+    skipped: int = 0
+    failed: list[str] = field(default_factory=list)
 
-    def run(self, docs: tp.List[MetadataDocument]):
-        chunks = self._split_documents(docs)
-        self._load_database(chunks)
-        # self._log_database_stats()
 
-    def _split_documents(self, docs: tp.List[MetadataDocument]) -> tp.List[Document]:
-        """Split documents by chunks
+def create_text_splitter(chunk_size: int) -> RecursiveCharacterTextSplitter:
+    # No overlap: the answer context joins adjacent chunks, which would otherwise repeat text
+    return RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=0)
 
-        :param docs:
-        :return:
-        """
-        logger = lg.getLogger(self._split_documents.__name__)
-        logger.info("Splitting in chunks %s documents", len(docs))
-        docs_chunks = []
-        for doc in docs:
-            loader = TextLoader(file_path=doc.filepath, metadata=doc.dict())
-            documents = loader.load()
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=self._config_loader["chunk_size"],
-                chunk_overlap=self._config_loader["chunk_overlap"],
-            )
-            docs_chunks += text_splitter.split_documents(documents)
 
-            logger.info("Removing file %s", doc.filepath)
-            os.remove(doc.filepath)
-        logger.info("Splitted %s documents in %s chunks", len(docs), len(docs_chunks))
-        return docs_chunks
+def split_document(doc: MetadataDocument, text_splitter: RecursiveCharacterTextSplitter) -> list[Chunk]:
+    metadata = doc.model_dump()
+    title = doc.titulo or doc.identificador
+    return [
+        Chunk(title=title, text=part, metadata=metadata) for part in text_splitter.split_text(doc.text) if part.strip()
+    ]
 
-    @retry(tries=3, delay=2)
-    def _load_database(self, docs_chunks: tp.List[Document]) -> None:
-        logger = lg.getLogger(self._load_database.__name__)
-        logger.info("Loading %s embeddings to database", len(docs_chunks))
-        self._vector_store.add_documents(docs_chunks)
-        logger.info("Loaded %s embeddings to database", len(docs_chunks))
 
-    def _log_database_stats(self) -> None:
-        logger = lg.getLogger(self._log_database_stats.__name__)
-        index_name = self._config_loader["vector_store_index_name"]
-        logger.info(pinecone.describe_index(index_name))
-        index = pinecone.Index(index_name)
-        logger.info(index.describe_index_stats())
+def index_documents(
+    docs: Sequence[MetadataDocument], index: VectorIndex, text_splitter: RecursiveCharacterTextSplitter
+) -> IndexStats:
+    """Index the documents that are not indexed yet. A failing document is logged and recorded, not fatal."""
+    logger = lg.getLogger(index_documents.__name__)
+    logger.info("Indexing %s documents", len(docs))
+    stats = IndexStats()
+    for doc in docs:
+        try:
+            if index.has_document(doc.source_name, doc.identificador):
+                stats.skipped += 1
+                continue
+            chunks = split_document(doc, text_splitter)
+            index.replace_document(doc.source_name, doc.identificador, chunks)
+            logger.info("Indexed document %s in %s chunks", doc.identificador, len(chunks))
+            stats.indexed += 1
+        except Exception:
+            logger.exception("Failed to index document %s", doc.identificador)
+            stats.failed.append(doc.identificador)
+    logger.info("Indexed %s, skipped %s and failed %s documents", stats.indexed, stats.skipped, len(stats.failed))
+    return stats

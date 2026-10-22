@@ -1,1 +1,7 @@
-.git
+*
+!pyproject.toml
+!uv.lock
+!config
+!src
+**/__pycache__
+**/*.py[cod]

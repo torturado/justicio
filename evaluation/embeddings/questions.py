@@ -10,7 +10,8 @@ QUERIES = (
     (
         "BOE-A-2022-14630",
         (
-            "¿Se aplica la ley a niños (varones) menores de edad víctimas de violencias sexuales o solo a niñas y mujeres?"
+            "¿Se aplica la ley a niños (varones) menores de edad víctimas de violencias sexuales o solo a niñas "
+            "y mujeres?"
         ),
     ),
     (
@@ -22,9 +23,7 @@ QUERIES = (
     ),
     (
         "BOE-A-2022-14630",
-        (
-            "¿Gozarán de derechos las víctimas de violencia sexual que estén en situación administrativa irregular?"
-        ),
+        ("¿Gozarán de derechos las víctimas de violencia sexual que estén en situación administrativa irregular?"),
     ),
     ("BOE-A-2022-14630", ("¿Qué Leyes hablan sobre la igualdad de género?")),
     # Vivienda
@@ -38,14 +37,13 @@ QUERIES = (
     (
         "BOE-A-2023-12203",
         (
-            "¿Quién paga los honorarios de la inmobiliaria en caso de alquiler de una vivienda, arrendatario o arrendador?"
+            "¿Quién paga los honorarios de la inmobiliaria en caso de alquiler de una vivienda, arrendatario o "
+            "arrendador?"
         ),
     ),
     (
         "BOE-A-2023-12203",
-        (
-            "¿Cuantos años necesita estar una vivienda sin uso para ser considerada 'vivienda vacía'?"
-        ),
+        ("¿Cuantos años necesita estar una vivienda sin uso para ser considerada 'vivienda vacía'?"),
     ),
     (
         "BOE-A-2023-12203",
@@ -54,27 +52,22 @@ QUERIES = (
     (
         "BOE-A-2023-12203",
         (
-            "¿Se considera gran tenedor a aquella persona con 7 inmuebles en diferentes zonas tensionadas y no tensionadas?"
+            "¿Se considera gran tenedor a aquella persona con 7 inmuebles en diferentes zonas tensionadas y no "
+            "tensionadas?"
         ),
     ),
     (
         "BOE-A-2023-12203",
-        (
-            "¿Se considera gran tenedor a aquella persona con 7 inmuebles en una misma zona tensionada?"
-        ),
+        ("¿Se considera gran tenedor a aquella persona con 7 inmuebles en una misma zona tensionada?"),
     ),
     ("BOE-A-2023-12203", ("¿Cuántos años durará el carácter de 'zona tensionada'?")),
     (
         "BOE-A-2023-12203",
-        (
-            "¿Qué porcentaje sobre los ingresos es necesario para que una zona sea considerada tensionada?"
-        ),
+        ("¿Qué porcentaje sobre los ingresos es necesario para que una zona sea considerada tensionada?"),
     ),
     (
         "BOE-A-2023-12203",
-        (
-            "¿Qué porcentaje sobre los ingresos es necesario para que una zona sea considerada tensionada?"
-        ),
+        ("¿Qué porcentaje sobre los ingresos es necesario para que una zona sea considerada tensionada?"),
     ),
     # FP
     (

@@ -1,0 +1,915 @@
+[
+  {
+    "id": "interesados-procedimiento",
+    "query": "¿Qué derechos tienen las personas interesadas en un procedimiento administrativo común?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10565",
+        "article": "53"
+      }
+    ]
+  },
+  {
+    "id": "relaciones-administraciones",
+    "query": "¿Qué principios deben regir las relaciones y la colaboración entre las Administraciones Públicas?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10566",
+        "article": "140"
+      }
+    ]
+  },
+  {
+    "id": "gran-tenedor",
+    "query": "¿Qué se considera gran tenedor según la legislación estatal de vivienda?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2023-12203",
+        "article": "3"
+      }
+    ]
+  },
+  {
+    "id": "referencia-explicita-vivienda",
+    "query": "¿Qué define el artículo 3 de la Ley 12/2023 como gran tenedor?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2023-12203",
+        "article": "3"
+      }
+    ]
+  },
+  {
+    "id": "proceso-monitorio",
+    "query": "¿Qué tipo de deudas pueden reclamarse mediante el proceso monitorio y qué requisitos deben cumplir?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2000-323",
+        "article": "812"
+      }
+    ]
+  },
+  {
+    "id": "derechos-inspeccion-tributaria",
+    "query": "¿Qué derechos del obligado tributario deben respetarse durante una inspección?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2003-23186",
+        "article": "34"
+      }
+    ]
+  },
+  {
+    "id": "datos-personas-fallecidas",
+    "query": "¿Qué protección establece la ley para los datos personales de personas fallecidas y quién puede ejercerla?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2018-16673",
+        "article": "3"
+      }
+    ]
+  },
+  {
+    "id": "detencion-preventiva-plazo-maximo",
+    "query": "¿Cuánto tiempo puede durar como máximo una detención preventiva antes de que el detenido sea puesto en libertad o a disposición del juez?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1978-31229",
+        "article": "17"
+      }
+    ]
+  },
+  {
+    "id": "entrada-domicilio-sin-orden-judicial",
+    "query": "¿Puede la policía entrar en mi casa sin mi consentimiento y sin una orden judicial?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1978-31229",
+        "article": "18"
+      }
+    ]
+  },
+  {
+    "id": "vivienda-digna-especulacion-suelo",
+    "query": "¿Qué deben hacer los poderes públicos para hacer efectivo el derecho a una vivienda digna y evitar la especulación con el suelo?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1978-31229",
+        "article": "47"
+      }
+    ]
+  },
+  {
+    "id": "reforma-constitucional-tiempo-guerra",
+    "query": "¿Se puede iniciar una reforma de la Constitución en tiempo de guerra o durante un estado de excepción?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1978-31229",
+        "article": "169"
+      }
+    ]
+  },
+  {
+    "id": "hurto-cuantia-pena-prision",
+    "query": "¿A partir de qué valor de lo sustraído un hurto deja de castigarse solo con multa y conlleva pena de prisión?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1995-25444",
+        "article": "234"
+      }
+    ]
+  },
+  {
+    "id": "tasa-alcohol-delito-conduccion",
+    "query": "¿Con qué tasa de alcohol conducir pasa a ser un delito y no solo una infracción de tráfico?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1995-25444",
+        "article": "379"
+      }
+    ]
+  },
+  {
+    "id": "eximentes-responsabilidad-criminal-articulo-20",
+    "query": "¿Qué circunstancias eximen de responsabilidad criminal según el artículo 20 de la Ley Orgánica 10/1995, del Código Penal?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1995-25444",
+        "article": "20"
+      }
+    ]
+  },
+  {
+    "id": "procurador-reclamacion-pequena-cuantia",
+    "query": "¿Necesito procurador para reclamar judicialmente una deuda de 1.500 euros en un juicio verbal?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2000-323",
+        "article": "23"
+      }
+    ]
+  },
+  {
+    "id": "juicio-verbal-por-materia-articulo-250",
+    "query": "Según el artículo 250 de la Ley 1/2000, de Enjuiciamiento Civil, ¿qué demandas se deciden en juicio verbal cualquiera que sea su cuantía?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2000-323",
+        "article": "250"
+      }
+    ]
+  },
+  {
+    "id": "apelacion-juicio-verbal-cuantia",
+    "query": "¿Se puede recurrir en apelación una sentencia de un juicio verbal por una reclamación de 2.500 euros?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2000-323",
+        "article": "455"
+      }
+    ]
+  },
+  {
+    "id": "periodo-prueba-duracion-articulo-14",
+    "query": "¿Qué duración máxima del periodo de prueba fija el artículo 14 del Real Decreto Legislativo 2/2015 cuando el convenio colectivo no dice nada?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-11430",
+        "article": "14"
+      }
+    ]
+  },
+  {
+    "id": "jornada-maxima-semanal",
+    "query": "¿Cuántas horas a la semana puede durar como máximo la jornada ordinaria de trabajo?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-11430",
+        "article": "34"
+      }
+    ]
+  },
+  {
+    "id": "indemnizacion-despido-improcedente",
+    "query": "Si un despido se declara improcedente y la empresa no me readmite, ¿qué indemnización me corresponde?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-11430",
+        "article": "56"
+      }
+    ]
+  },
+  {
+    "id": "edad-pension-jubilacion",
+    "query": "¿Qué edad se exige con carácter general para cobrar la pensión de jubilación y en qué caso se puede acceder a los 65 años?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-11724",
+        "article": "205"
+      }
+    ]
+  },
+  {
+    "id": "plazo-resolver-supletorio-articulo-21",
+    "query": "¿Qué plazo máximo para resolver establece el artículo 21 de la Ley 39/2015 cuando la norma del procedimiento no fija ninguno?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10565",
+        "article": "21"
+      }
+    ]
+  },
+  {
+    "id": "silencio-administrativo-solicitud",
+    "query": "Si la Administración no contesta a mi solicitud dentro del plazo, ¿se entiende estimada o desestimada?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10565",
+        "article": "24"
+      }
+    ]
+  },
+  {
+    "id": "obligacion-relacion-electronica-empresas",
+    "query": "¿Una sociedad mercantil está obligada a hacer sus trámites con la Administración por medios electrónicos?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10565",
+        "article": "14"
+      }
+    ]
+  },
+  {
+    "id": "abstencion-funcionario-parentesco",
+    "query": "¿Cuándo debe un funcionario abstenerse de intervenir en un expediente porque es pariente de uno de los interesados?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10566",
+        "article": "23"
+      }
+    ]
+  },
+  {
+    "id": "dano-indemnizable-articulo-32",
+    "query": "¿Qué requisitos debe reunir el daño, según el artículo 32 de la Ley 40/2015, para que la Administración tenga que indemnizar?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10566",
+        "article": "32"
+      }
+    ]
+  },
+  {
+    "id": "prescripcion-deuda-tributaria",
+    "query": "¿En cuántos años prescribe el derecho de Hacienda a liquidar una deuda tributaria?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2003-23186",
+        "article": "66"
+      }
+    ]
+  },
+  {
+    "id": "recargo-autoliquidacion-fuera-plazo",
+    "query": "¿Qué recargo pago si presento una autoliquidación fuera de plazo sin que Hacienda me lo haya requerido?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2003-23186",
+        "article": "27"
+      }
+    ]
+  },
+  {
+    "id": "consentimiento-datos-menores",
+    "query": "¿A partir de qué edad puede un menor consentir por sí mismo el tratamiento de sus datos personales?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2018-16673",
+        "article": "7"
+      }
+    ]
+  },
+  {
+    "id": "desconexion-digital-trabajadores",
+    "query": "¿Tengo derecho a no contestar correos y mensajes de la empresa fuera de mi horario de trabajo?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2018-16673",
+        "article": "88"
+      }
+    ]
+  },
+  {
+    "id": "videovigilancia-vestuarios-articulo-89",
+    "query": "Según el artículo 89 de la Ley Orgánica 3/2018, ¿puede una empresa instalar cámaras en los vestuarios o en las zonas de descanso de los trabajadores?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2018-16673",
+        "article": "89"
+      }
+    ]
+  },
+  {
+    "id": "duracion-minima-alquiler-persona-juridica",
+    "query": "Si alquilo un piso a una empresa propietaria, ¿cuál es la duración mínima del contrato que tiene que respetar?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1994-26003",
+        "article": "9"
+      }
+    ]
+  },
+  {
+    "id": "fianza-alquiler-vivienda-local",
+    "query": "¿Cuánta fianza hay que entregar al alquilar una vivienda y cuánta al alquilar un local de negocio?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1994-26003",
+        "article": "36"
+      }
+    ]
+  },
+  {
+    "id": "capital-minimo-sociedad-limitada",
+    "query": "¿Se puede constituir una sociedad limitada con menos de 3.000 euros de capital social?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2010-10544",
+        "article": "4"
+      }
+    ]
+  },
+  {
+    "id": "disolucion-por-perdidas-articulo-363",
+    "query": "Según el artículo 363 del Real Decreto Legislativo 1/2010, ¿cuándo debe disolverse una sociedad de capital por pérdidas?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2010-10544",
+        "article": "363"
+      }
+    ]
+  },
+  {
+    "id": "umbral-contrato-menor",
+    "query": "¿Hasta qué importe un contrato de obras o de servicios con la Administración se considera contrato menor?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2017-12902",
+        "article": "118"
+      }
+    ]
+  },
+  {
+    "id": "preaviso-prorroga-contrato-articulo-29",
+    "query": "¿Con qué antelación debe preavisarse la prórroga de un contrato público, según el artículo 29 de la Ley 9/2017, para que sea obligatoria para el contratista?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2017-12902",
+        "article": "29"
+      }
+    ]
+  },
+  {
+    "id": "actividad-impugnable-articulo-25",
+    "query": "¿Contra qué actos de la Administración es admisible el recurso según el artículo 25 de la Ley 29/1998?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1998-16718",
+        "article": "25"
+      }
+    ]
+  },
+  {
+    "id": "desistimiento-compra-online",
+    "query": "¿Cuántos días tengo para echarme atrás en una compra por internet sin tener que dar explicaciones?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2007-20555",
+        "article": "102"
+      }
+    ]
+  },
+  {
+    "id": "garantia-producto-defectuoso",
+    "query": "¿Durante cuánto tiempo responde el vendedor si un producto nuevo que compré resulta defectuoso?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2007-20555",
+        "article": "120"
+      }
+    ]
+  },
+  {
+    "id": "obligacion-declarar-renta-salario",
+    "query": "¿Estoy obligado a hacer la declaración de la renta si solo cobro un sueldo de 20.000 euros al año?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2006-20764",
+        "article": "96"
+      }
+    ]
+  },
+  {
+    "id": "vigencia-zona-tensionada",
+    "query": "¿Durante cuánto tiempo tiene vigencia la declaración de una zona de mercado residencial tensionado y puede prorrogarse?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2023-12203",
+        "article": "18"
+      }
+    ]
+  },
+  {
+    "id": "cambio-domicilio-fiscal-rd-1065-2007",
+    "query": "¿En qué plazo debe una sociedad comunicar el cambio de domicilio fiscal según el artículo 17 del Real Decreto 1065/2007?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2007-15984",
+        "article": "17"
+      }
+    ]
+  },
+  {
+    "id": "horario-inspeccion-rd-1065-2007",
+    "query": "¿Puede la inspección de Hacienda actuar en mis locales fuera de la jornada laboral según el artículo 182 del Real Decreto 1065/2007?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2007-15984",
+        "article": "182"
+      }
+    ]
+  },
+  {
+    "id": "factura-simplificada-rd-1619-2012",
+    "query": "¿Hasta qué importe puede expedirse una factura simplificada según el artículo 4 del Real Decreto 1619/2012?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2012-14696",
+        "article": "4"
+      }
+    ]
+  },
+  {
+    "id": "plazo-expedicion-factura-empresario",
+    "query": "Si el cliente es un empresario, ¿hasta cuándo tengo para expedirle la factura de una venta?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2012-14696",
+        "article": "11"
+      }
+    ]
+  },
+  {
+    "id": "plazo-demanda-despido",
+    "query": "¿De cuánto tiempo dispone un trabajador para demandar a la empresa por despido?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2011-15936",
+        "article": "103"
+      }
+    ]
+  },
+  {
+    "id": "comparativa-dias-inhabiles-administrativo-civil",
+    "query": "¿Qué días se excluyen al contar los plazos por días en un procedimiento administrativo y qué días son inhábiles en un proceso civil?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10565",
+        "article": "30"
+      },
+      {
+        "identificador": "BOE-A-2000-323",
+        "article": "130"
+      }
+    ]
+  },
+  {
+    "id": "comparativa-plazo-alzada-contencioso",
+    "query": "Contra un acto expreso, ¿qué plazo tengo para interponer recurso de alzada y qué plazo para acudir después a la vía contencioso-administrativa?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10565",
+        "article": "122"
+      },
+      {
+        "identificador": "BOE-A-1998-16718",
+        "article": "46"
+      }
+    ]
+  },
+  {
+    "id": "comparativa-nulidad-actos-contratos",
+    "query": "¿Qué relación hay entre las causas de nulidad de pleno derecho de los actos administrativos de la Ley 39/2015 y las causas de nulidad de los contratos de la Ley 9/2017?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2015-10565",
+        "article": "47"
+      },
+      {
+        "identificador": "BOE-A-2017-12902",
+        "article": "39"
+      }
+    ]
+  },
+  {
+    "id": "comparativa-abogado-civil-laboral",
+    "query": "¿Es obligatorio ir con abogado a un juicio civil y a un juicio laboral en primera instancia?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2000-323",
+        "article": "31"
+      },
+      {
+        "identificador": "BOE-A-2011-15936",
+        "article": "21"
+      }
+    ]
+  },
+  {
+    "id": "comparativa-infraccion-delito-fiscal",
+    "query": "¿Cuándo dejar de ingresar un impuesto es solo una infracción tributaria y a partir de qué cuantía pasa a ser delito contra la Hacienda Pública?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-2003-23186",
+        "article": "191"
+      },
+      {
+        "identificador": "BOE-A-1995-25444",
+        "article": "305"
+      }
+    ]
+  },
+  {
+    "id": "comparativa-vacaciones-constitucion-estatuto",
+    "query": "¿Qué garantiza la Constitución sobre las vacaciones de los trabajadores y qué duración mínima fija el Estatuto de los Trabajadores?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": [
+      {
+        "identificador": "BOE-A-1978-31229",
+        "article": "40"
+      },
+      {
+        "identificador": "BOE-A-2015-11430",
+        "article": "38"
+      }
+    ]
+  },
+  {
+    "id": "inexistente-ley-39-2015-articulo-150",
+    "query": "¿Qué dispone el artículo 150 de la Ley 39/2015, del Procedimiento Administrativo Común?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": []
+  },
+  {
+    "id": "inexistente-constitucion-articulo-175",
+    "query": "¿Qué establece el artículo 175 de la Constitución Española?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": []
+  },
+  {
+    "id": "inexistente-ley-29-1994-articulo-60",
+    "query": "¿Qué regula el artículo 60 de la Ley 29/1994, de Arrendamientos Urbanos?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": []
+  },
+  {
+    "id": "ley-ficticia-87-2019-teletrabajo",
+    "query": "¿Qué obligaciones impone a las empresas la Ley 87/2019 de teletrabajo?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": []
+  },
+  {
+    "id": "real-decreto-ficticio-4521-2018",
+    "query": "¿Qué establece el artículo 5 del Real Decreto 4521/2018 sobre ayudas al alquiler?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": []
+  },
+  {
+    "id": "ley-extranjera-mexico-aguinaldo",
+    "query": "¿Cuántos días de aguinaldo exige la Ley Federal del Trabajo de México?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": []
+  },
+  {
+    "id": "prediccion-resultado-juicio-concreto",
+    "query": "¿Va a ganar mi vecino el juicio que tiene el mes que viene contra su comunidad de propietarios en un juzgado de Sevilla?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": []
+  },
+  {
+    "id": "dato-estadistico-desahucios-2025",
+    "query": "¿Cuántos desahucios se ejecutaron en España durante 2025?",
+    "sources": [
+      "BOE"
+    ],
+    "targets": []
+  },
+  {
+    "id": "bocm-premios-medio-ambiente-mujer-rural",
+    "query": "¿Qué premio especial se otorga dentro de la categoría de Medio rural de los Premios de Medio Ambiente de la Comunidad de Madrid?",
+    "sources": [
+      "BOCM"
+    ],
+    "targets": [
+      {
+        "identificador": "BOCM-20260904-2"
+      }
+    ]
+  },
+  {
+    "id": "bocm-jornada-escolar-concertados-intervalo",
+    "query": "Según el decreto de diciembre de 2025 que regula la jornada escolar en la Comunidad de Madrid, ¿qué intervalo mínimo y máximo debe haber entre la sesión de mañana y la de tarde en los colegios concertados con jornada partida?",
+    "sources": [
+      "BOCM"
+    ],
+    "targets": [
+      {
+        "identificador": "BOCM-20251226-1"
+      }
+    ]
+  },
+  {
+    "id": "bocm-ley-vivienda-proteccion-publica-edificabilidad",
+    "query": "Según la ley madrileña de 2026 de medidas urgentes para incrementar la oferta de vivienda con protección pública, ¿cuánto puede incrementarse la edificabilidad y la densidad en parcelas destinadas a vivienda protegida?",
+    "sources": [
+      "BOCM"
+    ],
+    "targets": [
+      {
+        "identificador": "BOCM-20260615-1"
+      }
+    ]
+  },
+  {
+    "id": "bocm-consejo-transparencia-comision-proteccion-datos-reuniones",
+    "query": "¿Con qué frecuencia mínima debe convocarse la Comisión de Protección de Datos del Consejo de Transparencia y Protección de Datos de la Comunidad de Madrid según su reglamento de funcionamiento?",
+    "sources": [
+      "BOCM"
+    ],
+    "targets": [
+      {
+        "identificador": "BOCM-20251120-1"
+      }
+    ]
+  },
+  {
+    "id": "boa-ayudas-alquiler-vulnerables-2025-plazo",
+    "query": "¿Cuál es el plazo para solicitar las ayudas al alquiler de 2025 del Gobierno de Aragón para víctimas de violencia de género, personas desahuciadas, personas sin hogar y otras personas especialmente vulnerables?",
+    "sources": [
+      "BOA"
+    ],
+    "targets": [
+      {
+        "identificador": "007950803"
+      }
+    ]
+  },
+  {
+    "id": "boa-marca-excelencia-igualdad-vigencia",
+    "query": "¿Qué vigencia tiene la concesión del distintivo «Marca de Excelencia en Igualdad de Aragón» regulado en 2025 y puede prorrogarse?",
+    "sources": [
+      "BOA"
+    ],
+    "targets": [
+      {
+        "identificador": "007950819"
+      }
+    ]
+  },
+  {
+    "id": "boa-premio-libro-mejor-editado-2025-fechas-edicion",
+    "query": "¿Entre qué fechas deben haberse editado las obras para poder concurrir al Premio al libro mejor editado en Aragón 2025?",
+    "sources": [
+      "BOA"
+    ],
+    "targets": [
+      {
+        "identificador": "007957181"
+      }
+    ]
+  },
+  {
+    "id": "bopv-emantzipa-vivienda-compartida",
+    "query": "Según el decreto de 2026 que regula el Programa Emantzipa de emancipación juvenil del Gobierno Vasco, si una vivienda la comparten más de tres jóvenes, ¿a cuántos se les puede conceder la ayuda?",
+    "sources": [
+      "BOPV"
+    ],
+    "targets": [
+      {
+        "identificador": "2026/03/2601387a"
+      }
+    ]
+  },
+  {
+    "id": "bopv-comedor-escolar-orden-preferencia-plazas",
+    "query": "Tras la modificación de julio de 2026 de la normativa de comedores escolares de los centros públicos del País Vasco, ¿qué orden de preferencia se sigue para asignar plazas a los comensales habituales?",
+    "sources": [
+      "BOPV"
+    ],
+    "targets": [
+      {
+        "identificador": "2026/08/2603527a"
+      }
+    ]
+  },
+  {
+    "id": "bopv-bonos-elkarrekin-minimo-participantes-formacion",
+    "query": "En el Programa Bonos Elkarrekin regulado por el Gobierno Vasco en 2026, ¿cuántas personas deben participar como mínimo en una acción de formación para que sea subvencionable?",
+    "sources": [
+      "BOPV"
+    ],
+    "targets": [
+      {
+        "identificador": "2026/07/2603070a"
+      }
+    ]
+  },
+  {
+    "id": "boa-unanswerable-emantzipa-aragon",
+    "query": "¿Cuál es la cuantía mensual de las ayudas del Programa Emantzipa de emancipación juvenil que concede el Gobierno de Aragón?",
+    "sources": [
+      "BOA"
+    ],
+    "targets": []
+  },
+  {
+    "id": "bocm-unanswerable-cheque-escolar-bilingue-rural",
+    "query": "¿Cuál es el plazo de solicitud y la cuantía del «Cheque Escolar Bilingüe Rural» de la Comunidad de Madrid para familias de municipios de la Sierra Norte?",
+    "sources": [
+      "BOCM"
+    ],
+    "targets": []
+  }
+]

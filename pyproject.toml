@@ -1,0 +1,77 @@
+[project]
+name = "justicio"
+version = "1.0.0"
+description = "Question-answering assistant grounded in Spanish official bulletins"
+readme = "README.md"
+license = "MIT"
+requires-python = "==3.12.*"
+dependencies = [
+    "PyYAML==6.0.3",
+    "fastapi==0.150.0",
+    "uvicorn==0.54.0",
+    "httpx==0.28.1",
+    "requests==2.34.2",
+    "beautifulsoup4==4.15.0",
+    "lxml==6.1.3",
+    "pydantic==2.14.1",
+    "typer==0.27.3",
+    "google-genai==2.31.0",
+    "qdrant-client==1.19.1",
+    "sentence-transformers==6.1.0",
+    # int8 reranker for CPUs (see src/reranking.py)
+    "openvino==2026.4.1",
+    "nncf==3.4.0",
+    "langchain-text-splitters==1.1.3",
+    "langtrace-python-sdk==3.8.21",
+    # Imported by langtrace-python-sdk but not declared as one of its dependencies
+    "importlib-metadata==9.0.1",
+    "tavily-python==0.8.5",
+    "sendgrid==6.12.5",
+]
+
+[project.optional-dependencies]
+# PyTorch build. Without an extra, PyPI's default (CUDA) build is installed.
+cpu = ["torch==2.14.1"]
+rocm = ["torch==2.14.1", "triton-rocm==3.8.0"]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.17.1",
+]
+
+[tool.uv]
+conflicts = [[{ extra = "cpu" }, { extra = "rocm" }]]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-rocm", extra = "rocm" },
+]
+triton-rocm = [{ index = "pytorch-rocm", extra = "rocm" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.2"
+explicit = true
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["research"]
+
+[tool.ruff.lint]
+# S: the Bandit security rules
+select = ["E", "F", "W", "I", "B", "S", "ASYNC"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

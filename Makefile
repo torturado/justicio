@@ -1,11 +1,13 @@
-init:
-	pip install -r requirements.txt
+sync:
+	uv sync --locked --extra cpu
 
-isort:
-	isort --check-only src evaluation
+lint:
+	uv run ruff check
+	uv run ruff format --check
 
-format: isort
-	black src evaluation
+format:
+	uv run ruff check --fix
+	uv run ruff format
 
-isort-fix:
-	isort src evaluation
+test:
+	uv run pytest

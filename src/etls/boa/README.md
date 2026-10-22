@@ -15,6 +15,14 @@
 
 A través del enlace https://www.boa.aragon.es/cgi-bin/EBOA/BRSCGI, y con los parámetros adecuados (véase la clase BOAScrapper en scrapper.py), el portal del BOA devuelve directamente un archivo en formato JSON que contiene los metadatos y el contenido del boletín.
 
+Particularidades de la respuesta (comprobadas en octubre de 2026):
+
+- `SECC-C=BOA+o+Disposiciones+o+Justicia` filtra las secciones I, III y IV (p. ej. 12 de los 176 documentos del 2026-10-13).
+- `DOCS=1-250` pide un rango de resultados. Cada resultado indica su posición y el total en `NOrden` (p. ej. "3 de 24"); si se piden posiciones posteriores al total, se devuelve de nuevo la primera página.
+- Si no hay documentos, se devuelve una página HTML con "No se han recuperado documentos".
+- Se anuncia como ISO-8859-1, pero está codificada en windows-1252 (p. ej. "€" es 0x80).
+- El JSON puede contener caracteres de control sin escapar y barras invertidas que no son escapes (p. ej. `HYPERLINK \l "3"`).
+
 Ejemplo (alineado con el documento anterior):
 ```text
 {'NOrden': '3 de 24',
